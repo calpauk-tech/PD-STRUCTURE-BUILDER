@@ -1,0 +1,6 @@
+{
+  "name": "Planday Structure Builder",
+  "description": "Import your Planday Structure in bulk via Excel file.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
