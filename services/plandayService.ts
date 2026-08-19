@@ -243,6 +243,20 @@ export async function createDepartment(name: string, number: string | null = nul
     return result.data || result;
 }
 
+export async function updateDepartment(id: number, name: string, number: string | null = null): Promise<Department> {
+    const response = await fetchWithAuth(`${API_BASE_URL}/hr/v1.0/departments/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, number: number || null })
+    });
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`${response.status}: ${parseError(errText)}`);
+    }
+    const result = await response.json();
+    return result.data || result;
+}
+
 export async function deleteDepartment(id: number): Promise<void> {
     const response = await fetchWithAuth(`${API_BASE_URL}/hr/v1.0/departments/${id}`, {
         method: 'DELETE'
@@ -260,6 +274,16 @@ export async function fetchEmployeeGroups(): Promise<EmployeeGroup[]> {
     return fetchPaginatedData('/hr/v1.0/employeegroups');
 }
 
+export async function fetchEmployeeGroupDefaultRates(): Promise<any[]> {
+    const response = await fetchWithAuth(`${API_BASE_URL}/pay/v1.0/payrates/employeeGroups/default`);
+    if (!response.ok) {
+        if (response.status === 404) return []; // In case it's not available
+        throw new Error(`Failed to fetch default rates: ${await response.text()}`);
+    }
+    const result = await response.json();
+    return Array.isArray(result) ? result : (result.data || []);
+}
+
 export async function createEmployeeGroup(name: string): Promise<EmployeeGroup> {
     const response = await fetchWithAuth(`${API_BASE_URL}/hr/v1.0/employeegroups`, {
         method: 'POST',
@@ -274,6 +298,36 @@ export async function createEmployeeGroup(name: string): Promise<EmployeeGroup> 
 
     const result = await response.json();
     return result.data || result;
+}
+
+export async function updateEmployeeGroupDefaultRate(
+    id: number,
+    payload: {
+        defaultWageType?: 'HourlyRate' | 'ShiftRate' | '';
+        hourlyRate?: number;
+        shiftRate?: number;
+        salaryCode?: string;
+        salaryCode2?: string;
+    }
+): Promise<void> {    const body: any = {
+        employeeGroupId: id,
+        defaultWageType: payload.defaultWageType || 'HourlyRate',
+        hourlyRate: payload.hourlyRate || 0,
+        shiftRate: payload.shiftRate || 0,
+        salaryCode: payload.salaryCode || "",
+        salaryCode2: payload.salaryCode2 || ""
+    };
+
+    const response = await fetchWithAuth(`${API_BASE_URL}/pay/v1.0/payrates/employeeGroups/${id}/default`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Failed to set default rate for Employee Group: ${response.status} ${parseError(errText)}`);
+    }
 }
 
 export async function deleteEmployeeGroup(id: number): Promise<void> {

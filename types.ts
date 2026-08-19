@@ -15,10 +15,10 @@ export interface EmployeeGroup {
 }
 
 export type StructureItemType = 'department' | 'employee_group';
-export type ImportAction = 'create' | 'skip_duplicate' | 'delete';
+export type ImportAction = 'create' | 'skip_duplicate' | 'delete' | 'update';
 
 export interface StructureReviewItem {
-  id?: number; // Existing Planday ID if deleting or existing
+  id?: number; // Existing Planday ID if deleting, updating or existing
   type: StructureItemType;
   name: string;
   number?: string | null;
@@ -26,6 +26,7 @@ export interface StructureReviewItem {
   status?: 'pending' | 'processing' | 'success' | 'error' | 'skipped';
   resultMessage?: string;
   createdId?: number;
+  updatePayload?: any; // For default rates or other update data
 }
 
 export type OverwriteMode = 'keep' | 'overwrite';
