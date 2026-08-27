@@ -2378,7 +2378,7 @@ export default function App() {
                                 Back
                             </button>                            <button 
                                 onClick={appMode === 'import' || (appMode === 'update' && deleteInputMethod === 'file') ? generateReviewList : generateActionReviewList}
-                                disabled={!deptColumn && !groupColumn}
+                                disabled={!deptColumn && !groupColumn && !skillNameColumn && !posNameColumn}
                                 className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all text-sm flex items-center gap-2 disabled:opacity-50"
                             >
                                 <span>Continue to Review</span>
