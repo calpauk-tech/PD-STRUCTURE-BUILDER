@@ -20,8 +20,13 @@ import {
     fetchPortalInfo,
     updateEmployeeGroupDefaultRate,
     updateDepartment,
-    fetchEmployeeGroupDefaultRates
+    fetchEmployeeGroupDefaultRates,
+    fetchSkills,
+    createSkill,
+    fetchRevenueUnits,
+    createPosition
 } from './services/plandayService';
+import { checkForUSDateFormat, parseDateWithFormat } from './utils/dateParsing';
 
 // --- SVG Icons ---
 const CheckIcon: React.FC<{ className?: string }> = ({ className }) => (<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>);
@@ -36,6 +41,7 @@ const BuildingOfficeIcon: React.FC<{ className?: string }> = ({ className }) => 
 const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>);
 const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>);
 const RefreshIcon: React.FC<{ className?: string }> = ({ className }) => (<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>);
+const StarIcon: React.FC<{ className?: string }> = ({ className }) => (<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>);
 
 // --- Component Modals ---
 
@@ -194,6 +200,11 @@ export default function App() {
 
     const [appMode, setAppMode] = useState<'import' | 'update' | 'delete'>('import');
 
+    // Bulk Import state
+    const [importInputMethod, setImportInputMethod] = useState<'file' | 'text'>('file');
+    const [importDeptText, setImportDeptText] = useState('');
+    const [importGroupText, setImportGroupText] = useState('');
+
     // Bulk Delete / Update state
     const [deleteInputMethod, setDeleteInputMethod] = useState<'text' | 'file' | 'selection'>('selection');
     const [deleteDeptText, setDeleteDeptText] = useState('');
@@ -211,6 +222,8 @@ export default function App() {
     const [authError, setAuthError] = useState<string | null>(null);
     const [showTokenGuide, setShowTokenGuide] = useState(false);
     const [portalInfo, setPortalInfo] = useState<any>(null);
+    const [portalName, setPortalName] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState<boolean>(false);
     const [copiedAppId, setCopiedAppId] = useState(false);
 
     // Current Planday Structure fetched from API
@@ -222,12 +235,14 @@ export default function App() {
     // Template options
     const [includeDepartments, setIncludeDepartments] = useState(true);
     const [includeEmployeeGroups, setIncludeEmployeeGroups] = useState(true);
+    const [includeSkills, setIncludeSkills] = useState(false);
+    const [includeSections, setIncludeSections] = useState(false);
+    const [includePositions, setIncludePositions] = useState(false);
 
     // File Import state
-    const [overwriteMode, setOverwriteMode] = useState<OverwriteMode>('keep');
-    const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
     const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
     const [includeWageColumns, setIncludeWageColumns] = useState(false);
+    const [populateWithCurrent, setPopulateWithCurrent] = useState(false);
     const [parsedHeaders, setParsedHeaders] = useState<string[]>([]);
     const [parsedRows, setParsedRows] = useState<Record<string, any>[]>([]);
 
@@ -239,13 +254,30 @@ export default function App() {
     const [rateColumn, setRateColumn] = useState<string>('');
     const [salaryCodeColumn, setSalaryCodeColumn] = useState<string>('');
     const [salaryCode2Column, setSalaryCode2Column] = useState<string>('');
+    
+    // Skills Mapping State
+    const [skillNameColumn, setSkillNameColumn] = useState<string>('');
+    const [skillDescColumn, setSkillDescColumn] = useState<string>('');
+
+    // Positions Mapping State
+    const [posNameColumn, setPosNameColumn] = useState<string>('');
+    const [posDeptColumn, setPosDeptColumn] = useState<string>('');
+    const [posSectionColumn, setPosSectionColumn] = useState<string>('');
+    const [posGroupColumn, setPosGroupColumn] = useState<string>('');
+    const [posColorColumn, setPosColorColumn] = useState<string>('');
+    const [posValidFromColumn, setPosValidFromColumn] = useState<string>('');
+    const [posValidToColumn, setPosValidToColumn] = useState<string>('');
+    const [posSkillsColumn, setPosSkillsColumn] = useState<string>('');
+    const [posPayrollColumn, setPosPayrollColumn] = useState<string>('');
+    const [posRevenueUnitColumn, setPosRevenueUnitColumn] = useState<string>('');
 
     // Review state
     const [reviewItems, setReviewItems] = useState<StructureReviewItem[]>([]);
+    const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
     const [reviewTab, setReviewTab] = useState<'all' | 'create' | 'skip' | 'delete' | 'update'>('all');
     const [reviewSearch, setReviewSearch] = useState('');
     const [newItemName, setNewItemName] = useState('');
-    const [newItemType, setNewItemType] = useState<'department' | 'employee_group'>('department');
+    const [newItemType, setNewItemType] = useState<'department' | 'employee_group' | 'skill' | 'position'>('department');
 
     // Execution state
     const [isExecuting, setIsExecuting] = useState(false);
@@ -285,6 +317,20 @@ export default function App() {
         let detectedSalCode = '';
         let detectedSalCode2 = '';
 
+        let detSkillName = '';
+        let detSkillDesc = '';
+
+        let detPosName = '';
+        let detPosDept = '';
+        let detPosSection = '';
+        let detPosGroup = '';
+        let detPosColor = '';
+        let detPosValidFrom = '';
+        let detPosValidTo = '';
+        let detPosSkills = '';
+        let detPosPayroll = '';
+        let detPosRevenueUnit = '';
+
         for (const h of headers) {
             const clean = h.trim().toLowerCase();
             
@@ -309,6 +355,20 @@ export default function App() {
             if (!detectedSalCode2 && (clean.includes('salary code 2'))) {
                 detectedSalCode2 = h;
             }
+
+            if (!detSkillName && clean.includes('skill: name')) detSkillName = h;
+            if (!detSkillDesc && clean.includes('skill: description')) detSkillDesc = h;
+
+            if (!detPosName && clean.includes('position: name')) detPosName = h;
+            if (!detPosDept && clean.includes('position: department')) detPosDept = h;
+            if (!detPosSection && clean.includes('position: section')) detPosSection = h;
+            if (!detPosGroup && clean.includes('position: employee group')) detPosGroup = h;
+            if (!detPosColor && clean.includes('position: color')) detPosColor = h;
+            if (!detPosValidFrom && clean.includes('position: valid from')) detPosValidFrom = h;
+            if (!detPosValidTo && clean.includes('position: valid to')) detPosValidTo = h;
+            if (!detPosSkills && clean.includes('position: skills')) detPosSkills = h;
+            if (!detPosPayroll && clean.includes('position: include in payroll')) detPosPayroll = h;
+            if (!detPosRevenueUnit && clean.includes('position: revenue unit')) detPosRevenueUnit = h;
         }
 
         setDeptColumn(detectedDept);
@@ -318,6 +378,20 @@ export default function App() {
         setRateColumn(detectedRate);
         setSalaryCodeColumn(detectedSalCode);
         setSalaryCode2Column(detectedSalCode2);
+
+        setSkillNameColumn(detSkillName);
+        setSkillDescColumn(detSkillDesc);
+
+        setPosNameColumn(detPosName);
+        setPosDeptColumn(detPosDept);
+        setPosSectionColumn(detPosSection);
+        setPosGroupColumn(detPosGroup);
+        setPosColorColumn(detPosColor);
+        setPosValidFromColumn(detPosValidFrom);
+        setPosValidToColumn(detPosValidTo);
+        setPosSkillsColumn(detPosSkills);
+        setPosPayrollColumn(detPosPayroll);
+        setPosRevenueUnitColumn(detPosRevenueUnit);
     };
 
     // --- Actions ---
@@ -339,17 +413,22 @@ export default function App() {
 
         try {
             initializeService(credsToUse);
-            const [depts, groups, info] = await Promise.all([
+            const [depts, groups, info, skills, revenueUnits] = await Promise.all([
                 fetchDepartments(),
                 fetchEmployeeGroups(),
-                fetchPortalInfo().catch(() => null)
+                fetchPortalInfo().catch(() => null),
+                fetchSkills().catch(() => []),
+                fetchRevenueUnits().catch(() => [])
             ]);
 
             setCurrentStructure({
                 departments: depts,
-                employeeGroups: groups
+                employeeGroups: groups,
+                skills,
+                revenueUnits
             });
             setPortalInfo(info);
+            if (info?.name) setPortalName(info.name);
 
             sessionStorage.setItem('plandayCredentials', JSON.stringify(credsToUse));
             setStep(1); // Move to Step 2
@@ -358,7 +437,42 @@ export default function App() {
         } finally {
             setIsConnecting(false);
         }
-    };    // Step 2: Download Current Structure Excel
+    };
+
+    const handleChangeCredentials = () => {
+        sessionStorage.removeItem('plandayCredentials');
+        setPortalName(null);
+        setPortalInfo(null);
+        resetService();
+        setStep(0);
+    };
+
+    const handleManualRefresh = async () => {
+        setIsLoading(true);
+        try {
+            const [depts, groups, info, skills, revenueUnits] = await Promise.all([
+                fetchDepartments(),
+                fetchEmployeeGroups(),
+                fetchPortalInfo().catch(() => null),
+                fetchSkills().catch(() => []),
+                fetchRevenueUnits().catch(() => [])
+            ]);
+            setCurrentStructure({
+                departments: depts,
+                employeeGroups: groups,
+                skills,
+                revenueUnits
+            });
+            setPortalInfo(info);
+            if (info?.name) setPortalName(info.name);
+        } catch (error) {
+            console.error("Failed to refresh", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Step 2: Download Current Structure Excel
     const handleDownloadCurrentStructure = async () => {
         const wb = XLSX.utils.book_new();
         
@@ -378,7 +492,8 @@ export default function App() {
         // Prepare rows based on chosen options
         const maxLen = Math.max(
             includeDepartments ? currentStructure.departments.length : 0,
-            includeEmployeeGroups ? currentStructure.employeeGroups.length : 0
+            includeEmployeeGroups ? currentStructure.employeeGroups.length : 0,
+            includeSkills ? currentStructure.skills.length : 0
         );
         const data: any[] = [];
         
@@ -398,6 +513,25 @@ export default function App() {
                     row["Salary Code"] = rateData?.salaryCode || "";
                     row["Salary Code 2 (Rare)"] = rateData?.salaryCode2 || "";
                 }
+            }
+            if (includeSkills) {
+                row["Skill: Name"] = currentStructure.skills[i]?.name || "";
+                row["Skill: Description"] = currentStructure.skills[i]?.description || "";
+            }
+            if (includePositions) {
+                row["Position: Department"] = "";
+                row["Position: Section (optional)"] = "";
+                row["Position: Employee Group"] = "";
+                row["Position: Name"] = "";
+                row["Position: Color Hex # (optional)"] = "";
+                row["Position: Valid from (optional)"] = "";
+                row["Position: Valid to (optional)"] = "";
+                row["Position: Skills (optional)"] = "";
+                row["Position: Include in Payroll % - true/false"] = "";
+                row["Position: Revenue Unit"] = "";
+            }
+            if (includeSections) {
+                row["Section: Coming soon.."] = "";
             }
             data.push(row);
         }
@@ -439,16 +573,41 @@ export default function App() {
                 headers.push("Default Wage Type (HourlyRate/ShiftRate)", "Rate", "Salary Code", "Salary Code 2 (Rare)");
             }
         }
+        if (includeSkills) {
+            headers.push("Skill: Name", "Skill: Description");
+        }
+        if (includeSections) {
+            headers.push("Section: Coming soon..");
+        }
+        if (includePositions) {
+            headers.push(
+                "Position: Department",
+                "Position: Section (optional)",
+                "Position: Employee Group",
+                "Position: Name",
+                "Position: Color Hex # (optional)",
+                "Position: Valid from (optional)",
+                "Position: Valid to (optional)",
+                "Position: Skills (optional)",
+                "Position: Include in Payroll % - true/false",
+                "Position: Revenue Unit"
+            );
+        }
 
         const sampleRows = [
             headers.reduce((acc, h) => {
-                if (h === "Departments") acc[h] = "e.g. Sales";
+                acc[h] = "";
+                if (h === "Departments") acc[h] = "e.g. Care Home Burnley";
                 else if (h === "Department Number (optional)") acc[h] = "e.g. 101";
-                else if (h === "Employee Groups") acc[h] = "e.g. Sales Associate";
+                else if (h === "Employee Groups") acc[h] = "e.g. General Nurses";
                 else if (h === "Default Wage Type (HourlyRate/ShiftRate)") acc[h] = "HourlyRate";
                 else if (h === "Rate") acc[h] = "15.50";
                 else if (h === "Salary Code") acc[h] = "SC1";
                 else if (h === "Salary Code 2 (Rare)") acc[h] = "";
+                else if (h === "Skill: Name") acc[h] = "e.g. Drivers License";
+                else if (h === "Position: Department") acc[h] = "e.g. Care Home Burnley";
+                else if (h === "Position: Employee Group") acc[h] = "e.g. General Nurses";
+                else if (h === "Position: Name") acc[h] = "e.g. General Nurse";
                 return acc;
             }, {} as Record<string, string>)
         ];
@@ -530,58 +689,153 @@ export default function App() {
     // Step 3 -> 4: Process File Rows and Generate Review Items (Import)
     const generateReviewList = () => {
         const existingDeptNames = new Set(currentStructure.departments.map(d => d.name.trim().toLowerCase()));
-        const existingGroupNames = new Set(currentStructure.employeeGroups.map(g => g.name.trim().toLowerCase()));        const newDeptsMap = new Map<string, string | null>();
+        const existingGroupNames = new Set(currentStructure.employeeGroups.map(g => g.name.trim().toLowerCase()));
+        const existingSkillNames = new Set(currentStructure.skills.map(s => s.name.trim().toLowerCase()));
+
+        const newDeptsMap = new Map<string, string | null>();
         const newGroupsMap = new Map<string, any>();
+        const newSkillsMap = new Map<string, string>();
+        const newPositionsList: any[] = [];
+        const warnings: string[] = [];
         
-        parsedRows.forEach(row => {
-            if (deptColumn && row[deptColumn]) {
-                const val = String(row[deptColumn]).trim();
-                let deptNum = null;
-                if (deptNumberColumn && row[deptNumberColumn]) {
-                    deptNum = String(row[deptNumberColumn]).trim();
+        if (importInputMethod === 'file') {
+            const dateKeys = [posValidFromColumn, posValidToColumn].filter(Boolean);
+            const isUSFormat = checkForUSDateFormat(parsedRows, dateKeys);
+
+            parsedRows.forEach((row, index) => {
+                const rowNum = index + 2; // +1 for 0-index, +1 for header row
+                
+                // Department
+                const hasDeptName = !!(deptColumn && row[deptColumn]);
+                const hasDeptNum = !!(deptNumberColumn && row[deptNumberColumn]);
+                
+                if (hasDeptNum && !hasDeptName) {
+                    warnings.push(`Row ${rowNum}: Excluded Department creation. Missing required: 'Department Name'. Entered: [Dept Number: '${row[deptNumberColumn]}']`);
                 }
-                if (val) {
-                    if (!newDeptsMap.has(val) || deptNum) {
-                        newDeptsMap.set(val, deptNum);
+
+                if (hasDeptName) {
+                    const val = String(row[deptColumn]).trim();
+                    let deptNum = null;
+                    if (hasDeptNum) {
+                        deptNum = String(row[deptNumberColumn]).trim();
+                    }
+                    if (val) {
+                        if (!newDeptsMap.has(val) || deptNum) {
+                            newDeptsMap.set(val, deptNum);
+                        }
                     }
                 }
-            }
-            if (groupColumn && row[groupColumn]) {
-                const val = String(row[groupColumn]).trim();
-                if (val) {
-                    const groupData: any = newGroupsMap.get(val) || {};
-                    if (wageTypeColumn && row[wageTypeColumn]) groupData.wageType = String(row[wageTypeColumn]).trim();
-                    if (rateColumn && row[rateColumn]) groupData.rate = String(row[rateColumn]).trim();
-                    if (salaryCodeColumn && row[salaryCodeColumn]) groupData.salaryCode = String(row[salaryCodeColumn]).trim();
-                    if (salaryCode2Column && row[salaryCode2Column]) groupData.salaryCode2 = String(row[salaryCode2Column]).trim();
-                    newGroupsMap.set(val, groupData);
+                
+                // Employee Group
+                const hasGroupName = !!(groupColumn && row[groupColumn]);
+                const hasWageType = !!(wageTypeColumn && row[wageTypeColumn]);
+                const hasRate = !!(rateColumn && row[rateColumn]);
+                const hasSalCode = !!(salaryCodeColumn && row[salaryCodeColumn]);
+                const hasSalCode2 = !!(salaryCode2Column && row[salaryCode2Column]);
+
+                if ((hasWageType || hasRate || hasSalCode || hasSalCode2) && !hasGroupName) {
+                    const entered = [];
+                    if (hasWageType) entered.push(`Wage Type: '${row[wageTypeColumn]}'`);
+                    if (hasRate) entered.push(`Rate: '${row[rateColumn]}'`);
+                    if (hasSalCode) entered.push(`Salary Code: '${row[salaryCodeColumn]}'`);
+                    if (hasSalCode2) entered.push(`Salary Code 2: '${row[salaryCode2Column]}'`);
+                    warnings.push(`Row ${rowNum}: Excluded Employee Group creation. Missing required: 'Employee Group Name'. Entered: [${entered.join(', ')}]`);
                 }
-            }
-        });
+
+                if (hasGroupName) {
+                    const val = String(row[groupColumn]).trim();
+                    if (val) {
+                        const groupData: any = newGroupsMap.get(val) || {};
+                        if (hasWageType) groupData.wageType = String(row[wageTypeColumn]).trim();
+                        if (hasRate) groupData.rate = String(row[rateColumn]).trim();
+                        if (hasSalCode) groupData.salaryCode = String(row[salaryCodeColumn]).trim();
+                        if (hasSalCode2) groupData.salaryCode2 = String(row[salaryCode2Column]).trim();
+                        newGroupsMap.set(val, groupData);
+                    }
+                }
+                
+                // Skills
+                const hasSkillDesc = !!(skillDescColumn && row[skillDescColumn]);
+                const hasSkillName = !!(skillNameColumn && row[skillNameColumn]);
+                
+                if (hasSkillDesc && !hasSkillName) {
+                    warnings.push(`Row ${rowNum}: Excluded Skill creation. Missing required: 'Skill Name'. Entered: [Skill Description: '${row[skillDescColumn]}']`);
+                }
+
+                if (hasSkillName) {
+                    const val = String(row[skillNameColumn]).trim();
+                    if (val) {
+                        const desc = hasSkillDesc ? String(row[skillDescColumn]).trim() : '';
+                        if (!newSkillsMap.has(val) || desc) {
+                            newSkillsMap.set(val, desc);
+                        }
+                    }
+                }
+                
+                // Positions
+                const hasPosName = !!(posNameColumn && row[posNameColumn]);
+                const hasPosDept = !!(posDeptColumn && row[posDeptColumn]);
+                const hasPosGroup = !!(posGroupColumn && row[posGroupColumn]);
+                
+                const hasAnyPosData = hasPosName || hasPosDept || hasPosGroup || 
+                                      !!(posSectionColumn && row[posSectionColumn]) ||
+                                      !!(posColorColumn && row[posColorColumn]) ||
+                                      !!(posValidFromColumn && row[posValidFromColumn]) ||
+                                      !!(posValidToColumn && row[posValidToColumn]) ||
+                                      !!(posSkillsColumn && row[posSkillsColumn]) ||
+                                      !!(posPayrollColumn && row[posPayrollColumn]) ||
+                                      !!(posRevenueUnitColumn && row[posRevenueUnitColumn]);
+
+                if (hasAnyPosData) {
+                    if (hasPosName && hasPosDept && hasPosGroup) {
+                        newPositionsList.push({
+                            name: String(row[posNameColumn]).trim(),
+                            departmentName: String(row[posDeptColumn]).trim(),
+                            sectionName: posSectionColumn && row[posSectionColumn] ? String(row[posSectionColumn]).trim() : '',
+                            employeeGroupName: String(row[posGroupColumn]).trim(),
+                            color: posColorColumn && row[posColorColumn] ? String(row[posColorColumn]).trim() : undefined,
+                            validFrom: posValidFromColumn && row[posValidFromColumn] ? parseDateWithFormat(row[posValidFromColumn], isUSFormat) : undefined,
+                            validTo: posValidToColumn && row[posValidToColumn] ? parseDateWithFormat(row[posValidToColumn], isUSFormat) : undefined,
+                            skills: posSkillsColumn && row[posSkillsColumn] ? String(row[posSkillsColumn]).trim() : '',
+                            affectRevenue: posPayrollColumn && row[posPayrollColumn] ? (String(row[posPayrollColumn]).trim().toLowerCase() !== 'false') : true,
+                            revenueUnitName: posRevenueUnitColumn && row[posRevenueUnitColumn] ? String(row[posRevenueUnitColumn]).trim() : ''
+                        });
+                    } else {
+                        const missing = [];
+                        if (!hasPosName) missing.push('Name');
+                        if (!hasPosDept) missing.push('Department');
+                        if (!hasPosGroup) missing.push('Employee Group');
+                        
+                        const entered = [];
+                        if (hasPosName) entered.push(`Name: '${row[posNameColumn]}'`);
+                        if (hasPosDept) entered.push(`Department: '${row[posDeptColumn]}'`);
+                        if (hasPosGroup) entered.push(`Employee Group: '${row[posGroupColumn]}'`);
+                        if (posSectionColumn && row[posSectionColumn]) entered.push(`Section: '${row[posSectionColumn]}'`);
+                        if (posColorColumn && row[posColorColumn]) entered.push(`Color: '${row[posColorColumn]}'`);
+                        if (posValidFromColumn && row[posValidFromColumn]) entered.push(`Valid From: '${row[posValidFromColumn]}'`);
+                        if (posValidToColumn && row[posValidToColumn]) entered.push(`Valid To: '${row[posValidToColumn]}'`);
+                        if (posSkillsColumn && row[posSkillsColumn]) entered.push(`Skills: '${row[posSkillsColumn]}'`);
+                        if (posPayrollColumn && row[posPayrollColumn]) entered.push(`Include in Payroll: '${row[posPayrollColumn]}'`);
+                        if (posRevenueUnitColumn && row[posRevenueUnitColumn]) entered.push(`Revenue Unit: '${row[posRevenueUnitColumn]}'`);
+                        
+                        warnings.push(`Row ${rowNum}: Excluded Position creation. Missing required: ${missing.join(', ')}. Entered: [${entered.join(', ')}]`);
+                    }
+                }
+            });
+        } else if (importInputMethod === 'text') {
+            const dNames = importDeptText.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
+            const gNames = importGroupText.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
+            dNames.forEach(val => {
+                if (!newDeptsMap.has(val)) newDeptsMap.set(val, null);
+            });
+            gNames.forEach(val => {
+                if (!newGroupsMap.has(val)) newGroupsMap.set(val, {});
+            });
+        }
 
         const items: StructureReviewItem[] = [];
 
-        // If Overwrite mode: mark all existing Planday structure for deletion
-        if (overwriteMode === 'overwrite') {
-            currentStructure.departments.forEach(d => {
-                items.push({
-                    id: d.id,
-                    type: 'department',
-                    name: d.name,
-                    action: appMode === 'update' ? 'update' : 'delete',
-                    status: 'pending'
-                });
-            });
-            currentStructure.employeeGroups.forEach(g => {
-                items.push({
-                    id: g.id,
-                    type: 'employee_group',
-                    name: g.name,
-                    action: appMode === 'update' ? 'update' : 'delete',
-                    status: 'pending'
-                });
-            });
-        }        // Departments from file
+        // Departments from file
         newDeptsMap.forEach((deptNum, name) => {
             const isDuplicate = existingDeptNames.has(name.toLowerCase());
             const existingDept = currentStructure.departments.find(d => d.name.trim().toLowerCase() === name.toLowerCase());
@@ -608,7 +862,7 @@ export default function App() {
                     });
                 }
             } else {
-                if (isDuplicate && overwriteMode === 'keep') {
+                if (isDuplicate) {
                     if (deptNum && existingDept && existingDept.number !== deptNum) {
                         items.push({
                             id: existingDept.id,
@@ -677,7 +931,7 @@ export default function App() {
                     });
                 }
             } else {
-                if (isDuplicate && overwriteMode === 'keep') {
+                if (isDuplicate) {
                     if (updatePayload && existingGroup && Object.keys(updatePayload).length > 0) {
                         items.push({
                             id: existingGroup.id,
@@ -707,8 +961,63 @@ export default function App() {
                     });
                 }
             }
-        });        setReviewItems(items);
+        });        // Skills from file
+        newSkillsMap.forEach((desc, name) => {
+            const isDuplicate = existingSkillNames.has(name.toLowerCase());
+            if (appMode === 'update') {
+                items.push({
+                    type: 'skill',
+                    name,
+                    action: 'skip_duplicate',
+                    status: 'error',
+                    resultMessage: 'Update for skills not supported'
+                });
+            } else {
+                if (isDuplicate) {
+                    items.push({
+                        type: 'skill',
+                        name,
+                        action: 'skip_duplicate',
+                        status: 'skipped',
+                        resultMessage: 'Already exists in Planday'
+                    });
+                } else {
+                    items.push({
+                        type: 'skill',
+                        name,
+                        action: 'create',
+                        status: 'pending',
+                        updatePayload: { description: desc }
+                    });
+                }
+            }
+        });
+
+        // Positions from file
+        newPositionsList.forEach(pos => {
+            if (appMode === 'update') {
+                 items.push({
+                    type: 'position',
+                    name: pos.name,
+                    action: 'skip_duplicate',
+                    status: 'error',
+                    resultMessage: 'Update for positions not supported'
+                });
+            } else {
+                items.push({
+                    type: 'position',
+                    name: pos.name,
+                    action: 'create',
+                    status: 'pending',
+                    updatePayload: pos
+                });
+            }
+        });
+
+        setReviewItems(items);
+        setValidationWarnings(warnings);
         setStep(3); // Always go to Review from Mapping
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     // Process File/Text/Selection and Generate Review Items (Delete)
@@ -760,6 +1069,9 @@ export default function App() {
             });
         }        setReviewItems(items);
         setStep(appMode === 'update' && deleteInputMethod !== 'file' ? 2 : 3); // Config or Review
+        if (appMode !== 'update' || deleteInputMethod === 'file') {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
     };
 
     // Add custom item in Review
@@ -778,9 +1090,9 @@ export default function App() {
             {
                 type: newItemType,
                 name: cleanName,
-                action: isDup && overwriteMode === 'keep' ? 'skip_duplicate' : 'create',
-                status: isDup && overwriteMode === 'keep' ? 'skipped' : 'pending',
-                resultMessage: isDup && overwriteMode === 'keep' ? 'Already exists in Planday' : undefined
+                action: isDup ? 'skip_duplicate' : 'create',
+                status: isDup ? 'skipped' : 'pending',
+                resultMessage: isDup ? 'Already exists in Planday' : undefined
             }
         ]);
 
@@ -853,56 +1165,127 @@ export default function App() {
         }
 
         // 2. Process Creations
-        for (let i = 0; i < updatedItems.length; i++) {
-            const item = updatedItems[i];
-            if (item.action === 'create') {
-                processedCount++;
-                item.status = 'processing';
-                setReviewItems([...updatedItems]);
-                setExecutionProgress({
-                    current: processedCount,
-                    total: totalOps,
-                    label: `Creating ${item.type === 'department' ? 'Department' : 'Employee Group'} "${item.name}"...`
-                });
+        // Order: Departments -> Employee Groups -> Skills -> Positions
+        const creationOrder = ['department', 'employee_group', 'skill', 'position'];
+        
+        for (const type of creationOrder) {
+            for (let i = 0; i < updatedItems.length; i++) {
+                const item = updatedItems[i];
+                if (item.action === 'create' && item.type === type) {
+                    processedCount++;
+                    item.status = 'processing';
+                    setReviewItems([...updatedItems]);
+                    setExecutionProgress({
+                        current: processedCount,
+                        total: totalOps,
+                        label: `Creating ${item.type} "${item.name}"...`
+                    });
 
-                try {                    if (item.type === 'department') {
-                        const created = await createDepartment(item.name, item.number || null);
-                        item.status = 'success';
-                        item.createdId = created.id;
-                        item.resultMessage = `Created (ID: ${created.id})`;
-                    } else {                        const created = await createEmployeeGroup(item.name);
-                        item.status = 'success';
-                        item.createdId = created.id;
-                        item.resultMessage = `Created (ID: ${created.id})`;
-                        
-                        // Apply rates from file upload or global defaults
-                        let payloadToApply = item.updatePayload;
-                        
-                        // If no file payload but global is enabled, use global
-                        if (!payloadToApply && applyGroupDefaults) {
-                            payloadToApply = {
-                                defaultWageType: globalDefaultWageType,
-                                hourlyRate: globalHourlyRate !== '' ? Number(globalHourlyRate) : undefined,
-                                shiftRate: globalShiftRate !== '' ? Number(globalShiftRate) : undefined,
-                                salaryCode: globalSalaryCode,
-                                salaryCode2: globalSalaryCode2
-                            };
-                        }
-
-                        if (payloadToApply && Object.keys(payloadToApply).length > 0) {
+                    try {                    
+                        if (item.type === 'department') {
+                            const created = await createDepartment(item.name, item.number || null);
+                            item.status = 'success';
+                            item.createdId = created.id;
+                            item.resultMessage = `Created (ID: ${created.id})`;
+                        } else if (item.type === 'skill') {
+                            const created = await createSkill(item.name, item.updatePayload?.description);
+                            item.status = 'success';
+                            item.createdId = created.id;
+                            item.resultMessage = `Created (ID: ${created.id})`;
+                        } else if (item.type === 'position') {
+                            const posPayload = { ...item.updatePayload };
+                            
+                            // Try to fetch mapping IDs
                             try {
-                                await updateEmployeeGroupDefaultRate(created.id, payloadToApply);
-                                item.resultMessage += ' + Rates applied';
-                            } catch (rateErr: any) {
-                                item.resultMessage += ` (Warning: Rates failed - ${rateErr.message})`;
+                                const [currentDepts, currentGroups, currentSkills, currentRevUnits] = await Promise.all([
+                                    fetchDepartments(),
+                                    fetchEmployeeGroups(),
+                                    fetchSkills(),
+                                    fetchRevenueUnits()
+                                ]);
+                                
+                                const deptMatch = currentDepts.find(d => d.name.toLowerCase() === posPayload.departmentName?.toLowerCase());
+                                const groupMatch = currentGroups.find(g => g.name.toLowerCase() === posPayload.employeeGroupName?.toLowerCase());
+                                
+                                if (!deptMatch) throw new Error(`Department '${posPayload.departmentName}' not found`);
+                                if (!groupMatch) throw new Error(`Employee Group '${posPayload.employeeGroupName}' not found`);
+                                
+                                const apiPayload: any = {
+                                    name: posPayload.name,
+                                    departmentId: deptMatch.id,
+                                    employeeGroupId: groupMatch.id,
+                                    color: posPayload.color,
+                                    validFrom: posPayload.validFrom,
+                                    validTo: posPayload.validTo,
+                                    affectRevenue: posPayload.affectRevenue
+                                };
+
+                                if (posPayload.skills) {
+                                    const skillNames = posPayload.skills.split(',').map((s: string) => s.trim().toLowerCase());
+                                    const skillIds = currentSkills.filter(s => skillNames.includes(s.name.toLowerCase())).map(s => s.id);
+                                    if (skillIds.length > 0) apiPayload.skillIds = skillIds;
+                                }
+
+                                if (posPayload.revenueUnitName) {
+                                    const revMatch = currentRevUnits.find(r => r.name.toLowerCase() === posPayload.revenueUnitName?.toLowerCase() && r.departmentId === deptMatch.id);
+                                    if (revMatch) apiPayload.revenueUnitId = revMatch.id;
+                                } else {
+                                    // Auto assign if only 1 revenue unit in that dept
+                                    const deptRevUnits = currentRevUnits.filter(r => r.departmentId === deptMatch.id);
+                                    if (deptRevUnits.length === 1) apiPayload.revenueUnitId = deptRevUnits[0].id;
+                                }
+
+                                // Remove undefined/null properties to avoid payload issues
+                                Object.keys(apiPayload).forEach(key => {
+                                    if (apiPayload[key] === undefined || apiPayload[key] === null || apiPayload[key] === '') {
+                                        delete apiPayload[key];
+                                    }
+                                });
+
+                                const created = await createPosition(apiPayload);
+                                item.status = 'success';
+                                item.createdId = created.id;
+                                item.resultMessage = `Created (ID: ${created.id})`;
+
+                            } catch (mappingErr: any) {
+                                throw new Error(`Mapping failed: ${mappingErr.message}`);
+                            }
+
+                        } else if (item.type === 'employee_group') {                        
+                            const created = await createEmployeeGroup(item.name);
+                            item.status = 'success';
+                            item.createdId = created.id;
+                            item.resultMessage = `Created (ID: ${created.id})`;
+                            
+                            // Apply rates from file upload or global defaults
+                            let payloadToApply = item.updatePayload;
+                            
+                            // If no file payload but global is enabled, use global
+                            if (!payloadToApply && applyGroupDefaults) {
+                                payloadToApply = {
+                                    defaultWageType: globalDefaultWageType,
+                                    hourlyRate: globalHourlyRate !== '' ? Number(globalHourlyRate) : undefined,
+                                    shiftRate: globalShiftRate !== '' ? Number(globalShiftRate) : undefined,
+                                    salaryCode: globalSalaryCode,
+                                    salaryCode2: globalSalaryCode2
+                                };
+                            }
+
+                            if (payloadToApply && Object.keys(payloadToApply).length > 0) {
+                                try {
+                                    await updateEmployeeGroupDefaultRate(created.id, payloadToApply);
+                                    item.resultMessage += ' + Rates applied';
+                                } catch (rateErr: any) {
+                                    item.resultMessage += ` (Warning: Rates failed - ${rateErr.message})`;
+                                }
                             }
                         }
+                    } catch (err: any) {
+                        item.status = 'error';
+                        item.resultMessage = err.message || 'Failed to create';
                     }
-                } catch (err: any) {
-                    item.status = 'error';
-                    item.resultMessage = err.message || 'Failed to create';
+                    setReviewItems([...updatedItems]);
                 }
-                setReviewItems([...updatedItems]);
             }
         }
 
@@ -960,11 +1343,13 @@ export default function App() {
 
         // Refresh current Planday structure in memory
         try {
-            const [depts, groups] = await Promise.all([
+            const [depts, groups, skills, revenueUnits] = await Promise.all([
                 fetchDepartments(),
-                fetchEmployeeGroups()
+                fetchEmployeeGroups(),
+                fetchSkills().catch(() => []),
+                fetchRevenueUnits().catch(() => [])
             ]);
-            setCurrentStructure({ departments: depts, employeeGroups: groups });
+            setCurrentStructure({ departments: depts, employeeGroups: groups, skills, revenueUnits });
         } catch { }
     };    // Export execution report as Excel
     const handleExportExecutionReport = () => {
@@ -974,8 +1359,13 @@ export default function App() {
             else if (item.action === 'delete') actionLabel = 'Delete';
             else if (item.action === 'update') actionLabel = 'Update';
 
+            const typeLabel = item.type === 'department' ? 'Department' :
+                              item.type === 'employee_group' ? 'Employee Group' :
+                              item.type === 'skill' ? 'Skill' :
+                              item.type === 'position' ? 'Position' : 'Unknown';
+
             const row: any = {
-                "Type": item.type === 'department' ? 'Department' : 'Employee Group',
+                "Type": typeLabel,
                 "Name": item.name,
                 "Action": actionLabel,
                 "Status": item.status === 'success' ? 'Success' : item.status === 'error' ? 'Error' : 'Skipped',
@@ -992,6 +1382,17 @@ export default function App() {
                 row["Rate"] = item.updatePayload?.defaultWageType === 'HourlyRate' ? (item.updatePayload?.hourlyRate ?? "") : (item.updatePayload?.defaultWageType === 'ShiftRate' ? (item.updatePayload?.shiftRate ?? "") : "");
                 row["Salary Code"] = item.updatePayload?.salaryCode || "";
                 row["Salary Code 2"] = item.updatePayload?.salaryCode2 || "";
+            }
+
+            if (item.type === 'skill') {
+                row["Description"] = item.updatePayload?.description || "";
+            }
+
+            if (item.type === 'position') {
+                row["Department Name"] = item.updatePayload?.departmentName || "";
+                row["Employee Group Name"] = item.updatePayload?.employeeGroupName || "";
+                row["Skills"] = item.updatePayload?.skills || "";
+                row["Revenue Unit"] = item.updatePayload?.revenueUnitName || "";
             }
 
             return row;
@@ -1022,10 +1423,12 @@ export default function App() {
     const reviewStats = useMemo(() => {
         const toCreateDept = reviewItems.filter(i => i.type === 'department' && i.action === 'create').length;
         const toCreateGroup = reviewItems.filter(i => i.type === 'employee_group' && i.action === 'create').length;
+        const toCreateSkill = reviewItems.filter(i => i.type === 'skill' && i.action === 'create').length;
+        const toCreatePosition = reviewItems.filter(i => i.type === 'position' && i.action === 'create').length;
         const skipped = reviewItems.filter(i => i.action === 'skip_duplicate').length;
         const toDelete = reviewItems.filter(i => i.action === 'delete').length;
         const toUpdate = reviewItems.filter(i => i.action === 'update').length;
-        return { toCreateDept, toCreateGroup, skipped, toDelete, toUpdate };
+        return { toCreateDept, toCreateGroup, toCreateSkill, toCreatePosition, skipped, toDelete, toUpdate };
     }, [reviewItems]);
 
     // Steps configuration
@@ -1048,7 +1451,7 @@ export default function App() {
     const updateStepsList = [
         { title: "Authenticate", subtitle: "Connect Planday API" },
         { title: "Select Items", subtitle: "Choose what to update" },
-        { title: "Configure", subtitle: "Set new rates" },
+        { title: "Configure", subtitle: "Make selections" },
         { title: "Review", subtitle: "Confirm updates" },
         { title: "Execute", subtitle: "API Update" },
     ];
@@ -1069,26 +1472,6 @@ export default function App() {
                             <span className="ml-2 bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded-full uppercase">BETA</span>
                         </div>
                     </div>
-
-                    {step > 0 && (
-                        <div className="flex items-center gap-4 text-sm text-gray-600">
-                            {portalInfo?.portalName && (
-                                <span className="bg-gray-100 border border-gray-200 px-3 py-1 rounded-full text-xs font-semibold text-gray-700">
-                                    Connected: <strong>{portalInfo.portalName}</strong>
-                                </span>
-                            )}
-                            <button 
-                                onClick={() => {
-                                    resetService();
-                                    sessionStorage.removeItem('plandayCredentials');
-                                    setStep(0);
-                                }}
-                                className="text-gray-500 hover:text-red-600 text-xs font-medium underline transition-colors"
-                            >
-                                Disconnect
-                            </button>
-                        </div>
-                    )}
                 </div>
             </header>
 
@@ -1125,6 +1508,42 @@ export default function App() {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
                     <Stepper current={step} steps={stepsList} onStepClick={(s) => setStep(s)} />
                 </div>
+
+                {step !== 0 && (
+                    <div className="flex justify-center mt-6 text-sm items-center">
+                        {/* Refresh Button */}
+                        <button
+                            onClick={handleManualRefresh}
+                            className="mr-2 text-gray-500 hover:text-blue-600 transition-colors"
+                            title="Refresh portal data"
+                            disabled={isLoading}
+                        >
+                            <svg 
+                                className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} 
+                                fill="none" 
+                                viewBox="0 0 24 24" 
+                                stroke="currentColor"
+                            >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                        </button>
+
+                        {/* Portal/User Name */}
+                        <span className="text-gray-600">
+                            Logged in: <strong>{portalName || 'Loading...'}</strong>
+                        </span>
+                        
+                        <span className="text-gray-400 mx-2">|</span>
+                        
+                        {/* Logout Button */}
+                        <button 
+                            onClick={handleChangeCredentials} 
+                            className="text-gray-600 hover:text-red-700 underline transition-colors"
+                        >
+                            Change credentials (log out)
+                        </button>
+                    </div>
+                )}
 
                 {/* --- STEP 1: AUTHENTICATION --- */}
                 {step === 0 && (
@@ -1234,7 +1653,7 @@ export default function App() {
                 {step === 1 && appMode === 'import' && (
                     <div className="space-y-8">
                         {/* Current Structure Overview Banner */}
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 grid sm:grid-cols-3 gap-6">
                             <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-center gap-4">
                                 <div className="p-3 bg-blue-600 text-white rounded-lg">
                                     <BuildingOfficeIcon className="w-6 h-6" />
@@ -1255,13 +1674,33 @@ export default function App() {
                                 </div>
                             </div>
 
-                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-col justify-center sm:col-span-2 lg:col-span-1">
-                                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Planday Portal</span>
-                                <span className="text-sm font-bold text-gray-800 truncate">{portalInfo?.portalName || 'Connected Planday Account'}</span>
+                            <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 flex items-center gap-4">
+                                <div className="p-3 bg-emerald-600 text-white rounded-lg">
+                                    <StarIcon className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <span className="block text-2xl font-extrabold text-emerald-900">{currentStructure.skills.length}</span>
+                                    <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">Current Skills</span>
+                                </div>
                             </div>
                         </div>
 
-                        {/* Split Action Panels */}
+                        {/* Import Method Toggle */}
+                        <div className="flex justify-center my-2">
+                            <div className="inline-flex bg-gray-100 p-1 rounded-xl">
+                                {['file', 'text'].map(method => (
+                                    <button 
+                                        key={method}
+                                        onClick={() => setImportInputMethod(method as any)}
+                                        className={`px-8 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${importInputMethod === method ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        {method === 'file' ? 'Upload File' : 'Paste Names'}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {importInputMethod === 'file' && (
                         <div className="grid md:grid-cols-2 gap-8">
                             {/* Panel A: Template Generator / Structure Export */}
                             <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-between">
@@ -1295,7 +1734,7 @@ export default function App() {
                                                 onChange={(e) => setIncludeEmployeeGroups(e.target.checked)}
                                                 className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                                             />
-                                            <span>Employee Groups ({includeDepartments ? 'Column B' : 'Column A'})</span>
+                                            <span>Employee Groups</span>
                                         </label>
                                         {includeEmployeeGroups && (                                            <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800 ml-7">
                                                 <input 
@@ -1307,26 +1746,55 @@ export default function App() {
                                                 <span>Include Default Wage Data columns</span>
                                             </label>
                                         )}
+                                        <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={includeSkills} 
+                                                onChange={(e) => setIncludeSkills(e.target.checked)}
+                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                            />
+                                            <span>Skills</span>
+                                        </label>
+                                        <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={includeSections} 
+                                                onChange={(e) => setIncludeSections(e.target.checked)}
+                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                            />
+                                            <span>Sections (Coming soon)</span>
+                                        </label>
+                                        <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={includePositions} 
+                                                onChange={(e) => setIncludePositions(e.target.checked)}
+                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                            />
+                                            <span>Positions</span>
+                                        </label>
                                     </div>
                                 </div>
 
-                                <div className="space-y-3">
+                                <div className="space-y-3 mt-4">
                                     <button 
-                                        onClick={handleDownloadCurrentStructure}
-                                        disabled={!includeDepartments && !includeEmployeeGroups}
+                                        onClick={populateWithCurrent ? handleDownloadCurrentStructure : handleDownloadBlankTemplate}
+                                        disabled={!includeDepartments && !includeEmployeeGroups && !includeSkills}
                                         className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
                                     >
                                         <DownloadIcon className="w-4 h-4" />
-                                        <span>Download Current Structure Excel</span>
+                                        <span>Download Template</span>
                                     </button>
-
-                                    <button 
-                                        onClick={handleDownloadBlankTemplate}
-                                        disabled={!includeDepartments && !includeEmployeeGroups}
-                                        className="w-full py-2.5 px-4 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
-                                    >
-                                        <span>Download Blank Template</span>
-                                    </button>
+                                    
+                                    <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-700 justify-center">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={populateWithCurrent} 
+                                            onChange={(e) => setPopulateWithCurrent(e.target.checked)}
+                                            className="w-4 h-4 text-green-600 rounded focus:ring-green-500"
+                                        />
+                                        <span>Populate with current portal structure?</span>
+                                    </label>
                                 </div>
                             </div>
 
@@ -1343,43 +1811,11 @@ export default function App() {
                                         Upload your updated Excel file (.xlsx, .xls) or CSV. You will be able to map columns in the next step.
                                     </p>
 
-                                    {/* Existing Structure Prompt Choice */}
-                                    <div className="mb-6 bg-amber-50/60 border border-amber-200 p-4 rounded-xl">
-                                        <label className="block text-xs font-bold text-amber-900 uppercase tracking-wider mb-2">
-                                            Existing Structure Action:
-                                        </label>
-                                        <div className="space-y-2 text-sm">
-                                            <label className="flex items-center gap-3 cursor-pointer text-gray-800 font-medium">
-                                                <input 
-                                                    type="radio" 
-                                                    name="overwriteMode" 
-                                                    value="keep"
-                                                    checked={overwriteMode === 'keep'} 
-                                                    onChange={() => setOverwriteMode('keep')}
-                                                    className="w-4 h-4 text-blue-600 focus:ring-blue-500"
-                                                />
-                                                <span>Keep existing structure (Add new items only)</span>
-                                            </label>
-                                            <label className="flex items-center gap-3 cursor-pointer text-red-800 font-medium">
-                                                <input 
-                                                    type="radio" 
-                                                    name="overwriteMode" 
-                                                    value="overwrite"
-                                                    checked={overwriteMode === 'overwrite'} 
-                                                    onChange={() => {
-                                                        setOverwriteMode('overwrite');
-                                                        setShowOverwriteConfirm(true);
-                                                    }}
-                                                    className="w-4 h-4 text-red-600 focus:ring-red-500"
-                                                />
-                                                <span className="text-red-700 font-semibold">Delete / Overwrite existing structure</span>
-                                            </label>
-                                        </div>
-                                    </div>
+
                                 </div>
 
                                 {/* Drag and Drop / File Input Dropzone */}
-                                <div className="relative border-2 border-dashed border-gray-300 hover:border-blue-500 rounded-2xl p-6 text-center transition-colors bg-gray-50/50 hover:bg-blue-50/30 group">
+                                <div className="relative border-2 border-dashed border-gray-300 hover:border-blue-500 rounded-2xl p-6 text-center transition-colors bg-gray-50/50 hover:bg-blue-50/30 group flex-1 flex flex-col items-center justify-center min-h-[160px]">
                                     <input 
                                         type="file" 
                                         accept=".xlsx,.xls,.csv" 
@@ -1396,13 +1832,54 @@ export default function App() {
                                 </div>
                             </div>
                         </div>
+                        )}
+
+                        {importInputMethod === 'text' && (
+                            /* Text Input for Paste Names */
+                            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 space-y-6">
+                                <div>
+                                    <h3 className="text-xl font-bold text-gray-900 mb-1">Paste Names</h3>
+                                    <p className="text-sm text-gray-600">Provide the new departments or groups you wish to create (comma, semicolon, or newline separated).</p>
+                                </div>
+                                <div className="grid md:grid-cols-2 gap-8">
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Departments</label>
+                                        <textarea 
+                                            value={importDeptText}
+                                            onChange={e => setImportDeptText(e.target.value)}
+                                            className="w-full h-40 px-4 py-3 border border-gray-200 rounded-xl"
+                                            placeholder="Sales, Marketing; IT&#10;Finance"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Employee Groups</label>
+                                        <textarea 
+                                            value={importGroupText}
+                                            onChange={e => setImportGroupText(e.target.value)}
+                                            className="w-full h-40 px-4 py-3 border border-gray-200 rounded-xl"
+                                            placeholder="Manager, Associate; Admin&#10;Intern"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex justify-end pt-4">
+                                    <button 
+                                        onClick={generateReviewList}
+                                        disabled={!importDeptText.trim() && !importGroupText.trim()}
+                                        className="py-3 px-8 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
+                                    >
+                                        <span>Continue to Review</span>
+                                        <ArrowRightIcon className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Collapsible View of Current Structure */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
                             <h4 className="text-md font-bold text-gray-900 mb-4 flex items-center gap-2">
                                 <span>📋</span> Current Structure Preview
                             </h4>
-                            <div className="grid md:grid-cols-2 gap-6 text-sm">
+                            <div className="grid md:grid-cols-3 gap-6 text-sm">
                                 {/* Departments List */}
                                 <div className="border border-gray-200 rounded-xl overflow-hidden">
                                     <div className="bg-gray-50 px-4 py-2.5 font-bold text-gray-800 border-b border-gray-200 flex justify-between items-center">
@@ -1442,6 +1919,26 @@ export default function App() {
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Skills List */}
+                                <div className="border border-gray-200 rounded-xl overflow-hidden">
+                                    <div className="bg-gray-50 px-4 py-2.5 font-bold text-gray-800 border-b border-gray-200 flex justify-between items-center">
+                                        <span>Skills</span>
+                                        <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">{currentStructure.skills.length}</span>
+                                    </div>
+                                    <div className="max-h-48 overflow-y-auto p-3 space-y-1 bg-white">
+                                        {currentStructure.skills.length > 0 ? (
+                                            currentStructure.skills.map(s => (
+                                                <div key={s.id} className="py-1 px-2 hover:bg-gray-50 rounded text-gray-700 text-xs flex justify-between">
+                                                    <span>{s.name}</span>
+                                                    <span className="text-gray-400">ID: {s.id}</span>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <span className="text-xs text-gray-400 italic">No skills currently in Planday</span>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1451,7 +1948,7 @@ export default function App() {
                 {step === 1 && (appMode === 'delete' || appMode === 'update') && (
                     <div className="space-y-8">
                         {/* Current Structure Overview Banner (reused) */}
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 grid sm:grid-cols-3 gap-6">
                             <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-center gap-4">
                                 <div className="p-3 bg-blue-600 text-white rounded-lg">
                                     <BuildingOfficeIcon className="w-6 h-6" />
@@ -1472,9 +1969,14 @@ export default function App() {
                                 </div>
                             </div>
 
-                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-col justify-center sm:col-span-2 lg:col-span-1">
-                                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Planday Portal</span>
-                                <span className="text-sm font-bold text-gray-800 truncate">{portalInfo?.portalName || 'Connected Planday Account'}</span>
+                            <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 flex items-center gap-4">
+                                <div className="p-3 bg-emerald-600 text-white rounded-lg">
+                                    <StarIcon className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <span className="block text-2xl font-extrabold text-emerald-900">{currentStructure.skills.length}</span>
+                                    <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">Current Skills</span>
+                                </div>
                             </div>
                         </div>
 
@@ -1507,7 +2009,28 @@ export default function App() {
                                     <div className="grid md:grid-cols-2 gap-6">
                                         {/* Depts */}
                                         <div className="border border-gray-200 rounded-xl overflow-hidden">
-                                            <div className="bg-gray-50 px-4 py-2.5 font-bold text-gray-800 border-b border-gray-200">Departments</div>
+                                            <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200 flex justify-between items-center">
+                                                <span className="font-bold text-gray-800">Departments</span>
+                                                <button
+                                                    onClick={() => {
+                                                        const filtered = currentStructure.departments.filter(d => d.name.toLowerCase().includes(deleteSearchTerm.toLowerCase()));
+                                                        if (filtered.every(d => deleteSelectedDepts.has(d.id))) {
+                                                            // Deselect all filtered
+                                                            const newSet = new Set(deleteSelectedDepts);
+                                                            filtered.forEach(d => newSet.delete(d.id));
+                                                            setDeleteSelectedDepts(newSet);
+                                                        } else {
+                                                            // Select all filtered
+                                                            const newSet = new Set(deleteSelectedDepts);
+                                                            filtered.forEach(d => newSet.add(d.id));
+                                                            setDeleteSelectedDepts(newSet);
+                                                        }
+                                                    }}
+                                                    className="text-xs font-bold text-blue-600 hover:text-blue-800"
+                                                >
+                                                    {currentStructure.departments.filter(d => d.name.toLowerCase().includes(deleteSearchTerm.toLowerCase())).length > 0 && currentStructure.departments.filter(d => d.name.toLowerCase().includes(deleteSearchTerm.toLowerCase())).every(d => deleteSelectedDepts.has(d.id)) ? 'Deselect All' : 'Select All'}
+                                                </button>
+                                            </div>
                                             <div className="max-h-64 overflow-y-auto p-3 space-y-1">
                                                 {currentStructure.departments.filter(d => d.name.toLowerCase().includes(deleteSearchTerm.toLowerCase())).map(d => (
                                                     <label key={d.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer">
@@ -1529,7 +2052,28 @@ export default function App() {
                                         </div>
                                         {/* Groups */}
                                         <div className="border border-gray-200 rounded-xl overflow-hidden">
-                                            <div className="bg-gray-50 px-4 py-2.5 font-bold text-gray-800 border-b border-gray-200">Employee Groups</div>
+                                            <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200 flex justify-between items-center">
+                                                <span className="font-bold text-gray-800">Employee Groups</span>
+                                                <button
+                                                    onClick={() => {
+                                                        const filtered = currentStructure.employeeGroups.filter(g => g.name.toLowerCase().includes(deleteSearchTerm.toLowerCase()));
+                                                        if (filtered.every(g => deleteSelectedGroups.has(g.id))) {
+                                                            // Deselect all filtered
+                                                            const newSet = new Set(deleteSelectedGroups);
+                                                            filtered.forEach(g => newSet.delete(g.id));
+                                                            setDeleteSelectedGroups(newSet);
+                                                        } else {
+                                                            // Select all filtered
+                                                            const newSet = new Set(deleteSelectedGroups);
+                                                            filtered.forEach(g => newSet.add(g.id));
+                                                            setDeleteSelectedGroups(newSet);
+                                                        }
+                                                    }}
+                                                    className="text-xs font-bold text-blue-600 hover:text-blue-800"
+                                                >
+                                                    {currentStructure.employeeGroups.filter(g => g.name.toLowerCase().includes(deleteSearchTerm.toLowerCase())).length > 0 && currentStructure.employeeGroups.filter(g => g.name.toLowerCase().includes(deleteSearchTerm.toLowerCase())).every(g => deleteSelectedGroups.has(g.id)) ? 'Deselect All' : 'Select All'}
+                                                </button>
+                                            </div>
                                             <div className="max-h-64 overflow-y-auto p-3 space-y-1">
                                                 {currentStructure.employeeGroups.filter(g => g.name.toLowerCase().includes(deleteSearchTerm.toLowerCase())).map(g => (
                                                     <label key={g.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer">
@@ -1616,7 +2160,7 @@ export default function App() {
 
                         </div>
                     </div>                )}                {/* --- STEP 3: FIELD MAPPING --- */}
-                {step === 2 && (appMode === 'import' || deleteInputMethod === 'file') && (
+                {step === 2 && ((appMode === 'import' && importInputMethod === 'file') || deleteInputMethod === 'file') && (
                     <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 space-y-8">
                         <div>
                             <div className="flex justify-between items-center mb-2">
@@ -1628,58 +2172,171 @@ export default function App() {
                             <p className="text-sm text-gray-600">
                                 Select which columns from your uploaded file represent Departments and Employee Groups.
                             </p>
-                        </div>                        {/* Selectors */}
-                        <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 bg-gray-50 p-6 rounded-2xl border border-gray-200">
-                            <div>
-                                <label className="block text-sm font-bold text-gray-800 mb-2">Departments:</label>
-                                <select value={deptColumn} onChange={(e) => setDeptColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
-                                    <option value="">-- None --</option>
-                                    {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                </select>
+                        </div>                        {/* Mapping Cards */}
+                        <div className="space-y-6">
+                            {/* Departments Card */}
+                            <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
+                                <h3 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-200 pb-2">Departments</h3>
+                                <div className="grid md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Departments:</label>
+                                        <select value={deptColumn} onChange={(e) => setDeptColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Dept Number (Opt):</label>
+                                        <select value={deptNumberColumn} onChange={(e) => setDeptNumberColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-sm font-bold text-gray-800 mb-2">Dept Number (Opt):</label>
-                                <select value={deptNumberColumn} onChange={(e) => setDeptNumberColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
-                                    <option value="">-- None --</option>
-                                    {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                </select>
+
+                            {/* Employee Groups Card */}
+                            <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
+                                <h3 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-200 pb-2">Employee Groups</h3>
+                                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Employee Groups:</label>
+                                        <select value={groupColumn} onChange={(e) => setGroupColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Default Wage Type:</label>
+                                        <select value={wageTypeColumn} onChange={(e) => setWageTypeColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Rate:</label>
+                                        <select value={rateColumn} onChange={(e) => setRateColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Salary Code:</label>
+                                        <select value={salaryCodeColumn} onChange={(e) => setSalaryCodeColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Salary Code 2 (Rare):</label>
+                                        <select value={salaryCode2Column} onChange={(e) => setSalaryCode2Column(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-sm font-bold text-gray-800 mb-2">Employee Groups:</label>
-                                <select value={groupColumn} onChange={(e) => setGroupColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
-                                    <option value="">-- None --</option>
-                                    {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                </select>
+
+                            {/* Skills Card */}
+                            <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
+                                <h3 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-200 pb-2">Skills</h3>
+                                <div className="grid md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Skill Name:</label>
+                                        <select value={skillNameColumn} onChange={(e) => setSkillNameColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Skill Description (Opt):</label>
+                                        <select value={skillDescColumn} onChange={(e) => setSkillDescColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-sm font-bold text-gray-800 mb-2">Default Wage Type:</label>
-                                <select value={wageTypeColumn} onChange={(e) => setWageTypeColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
-                                    <option value="">-- None --</option>
-                                    {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                </select>
+
+                            {/* Sections/Positions Card */}
+                            <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
+                                <h3 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-200 pb-2">Sections / Positions</h3>
+                                <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Position Name:</label>
+                                        <select value={posNameColumn} onChange={(e) => setPosNameColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Position Dept:</label>
+                                        <select value={posDeptColumn} onChange={(e) => setPosDeptColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Position Group:</label>
+                                        <select value={posGroupColumn} onChange={(e) => setPosGroupColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Pos. Section (Opt):</label>
+                                        <select value={posSectionColumn} onChange={(e) => setPosSectionColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Pos. Color (Opt):</label>
+                                        <select value={posColorColumn} onChange={(e) => setPosColorColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Pos. Valid From (Opt):</label>
+                                        <select value={posValidFromColumn} onChange={(e) => setPosValidFromColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Pos. Valid To (Opt):</label>
+                                        <select value={posValidToColumn} onChange={(e) => setPosValidToColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Pos. Skills (Opt):</label>
+                                        <select value={posSkillsColumn} onChange={(e) => setPosSkillsColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Pos. In Payroll (Opt):</label>
+                                        <select value={posPayrollColumn} onChange={(e) => setPosPayrollColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Pos. Rev Unit (Opt):</label>
+                                        <select value={posRevenueUnitColumn} onChange={(e) => setPosRevenueUnitColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-sm font-bold text-gray-800 mb-2">Rate:</label>
-                                <select value={rateColumn} onChange={(e) => setRateColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
-                                    <option value="">-- None --</option>
-                                    {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-bold text-gray-800 mb-2">Salary Code:</label>
-                                <select value={salaryCodeColumn} onChange={(e) => setSalaryCodeColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
-                                    <option value="">-- None --</option>
-                                    {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-bold text-gray-800 mb-2">Salary Code 2 (Rare):</label>
-                                <select value={salaryCode2Column} onChange={(e) => setSalaryCode2Column(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
-                                    <option value="">-- None --</option>
-                                    {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                </select>
-                            </div>
-                        </div>                        {/* Mapped Data Live Preview Table */}
+                        </div>
+
+                        {/* Mapped Data Live Preview Table */}
                         <div>
                             <h3 className="text-md font-bold text-gray-900 mb-3">Preview Mapped Data (First 10 Rows)</h3>
                             <div className="border border-gray-200 rounded-xl overflow-x-auto shadow-sm">
@@ -1688,12 +2345,11 @@ export default function App() {
                                         <tr>
                                             <th className="p-3 w-12 text-center">#</th>
                                             <th className="p-3">Department (Mapped: {deptColumn || 'None'})</th>
-                                            <th className="p-3">Dept # (Mapped: {deptNumberColumn || 'None'})</th>
                                             <th className="p-3">Group (Mapped: {groupColumn || 'None'})</th>
-                                            <th className="p-3">Wage Type (Mapped: {wageTypeColumn || 'None'})</th>
-                                            <th className="p-3">Rate (Mapped: {rateColumn || 'None'})</th>
-                                            <th className="p-3">Sal. Code (Mapped: {salaryCodeColumn || 'None'})</th>
-                                            <th className="p-3">Sal. Code 2 (Mapped: {salaryCode2Column || 'None'})</th>
+                                            <th className="p-3">Skill Name (Mapped: {skillNameColumn || 'None'})</th>
+                                            <th className="p-3">Position Name (Mapped: {posNameColumn || 'None'})</th>
+                                            <th className="p-3">Position Dept (Mapped: {posDeptColumn || 'None'})</th>
+                                            <th className="p-3">Position Group (Mapped: {posGroupColumn || 'None'})</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
@@ -1701,12 +2357,11 @@ export default function App() {
                                             <tr key={idx} className="hover:bg-gray-50/80">
                                                 <td className="p-3 text-center text-gray-400 font-mono text-xs">{idx + 1}</td>
                                                 <td className="p-3 font-medium text-gray-800">{deptColumn && row[deptColumn] ? row[deptColumn] : <span className="text-gray-300 italic">-</span>}</td>
-                                                <td className="p-3 font-medium text-gray-800">{deptNumberColumn && row[deptNumberColumn] ? row[deptNumberColumn] : <span className="text-gray-300 italic">-</span>}</td>
                                                 <td className="p-3 font-medium text-gray-800">{groupColumn && row[groupColumn] ? row[groupColumn] : <span className="text-gray-300 italic">-</span>}</td>
-                                                <td className="p-3 font-medium text-gray-800">{wageTypeColumn && row[wageTypeColumn] ? row[wageTypeColumn] : <span className="text-gray-300 italic">-</span>}</td>
-                                                <td className="p-3 font-medium text-gray-800">{rateColumn && row[rateColumn] ? row[rateColumn] : <span className="text-gray-300 italic">-</span>}</td>
-                                                <td className="p-3 font-medium text-gray-800">{salaryCodeColumn && row[salaryCodeColumn] ? row[salaryCodeColumn] : <span className="text-gray-300 italic">-</span>}</td>
-                                                <td className="p-3 font-medium text-gray-800">{salaryCode2Column && row[salaryCode2Column] ? row[salaryCode2Column] : <span className="text-gray-300 italic">-</span>}</td>
+                                                <td className="p-3 font-medium text-gray-800">{skillNameColumn && row[skillNameColumn] ? row[skillNameColumn] : <span className="text-gray-300 italic">-</span>}</td>
+                                                <td className="p-3 font-medium text-gray-800">{posNameColumn && row[posNameColumn] ? row[posNameColumn] : <span className="text-gray-300 italic">-</span>}</td>
+                                                <td className="p-3 font-medium text-gray-800">{posDeptColumn && row[posDeptColumn] ? row[posDeptColumn] : <span className="text-gray-300 italic">-</span>}</td>
+                                                <td className="p-3 font-medium text-gray-800">{posGroupColumn && row[posGroupColumn] ? row[posGroupColumn] : <span className="text-gray-300 italic">-</span>}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -1854,8 +2509,31 @@ export default function App() {
                 {/* --- STEP 4: REVIEW & DUPLICATE CHECK --- */}
                 {step === 3 && (
                     <div className="space-y-6">
+                        {/* Validation Warnings Banner */}
+                        {validationWarnings.length > 0 && (
+                            <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg shadow-sm">
+                                <div className="flex">
+                                    <div className="flex-shrink-0">
+                                        <AlertIcon className="h-5 w-5 text-amber-500" />
+                                    </div>
+                                    <div className="ml-3">
+                                        <h3 className="text-sm font-medium text-amber-800">
+                                            Some data was excluded during parsing
+                                        </h3>
+                                        <div className="mt-2 text-sm text-amber-700">
+                                            <ul className="list-disc pl-5 space-y-1">
+                                                {validationWarnings.map((warning, idx) => (
+                                                    <li key={idx}>{warning}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Overview Stats */}
-                        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
                                 <span className="block text-xs font-bold text-gray-500 uppercase tracking-wider">New Departments</span>
                                 <span className="text-2xl font-extrabold text-blue-600 mt-1 block">{reviewStats.toCreateDept}</span>
@@ -1864,6 +2542,16 @@ export default function App() {
                             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
                                 <span className="block text-xs font-bold text-gray-500 uppercase tracking-wider">New Employee Groups</span>
                                 <span className="text-2xl font-extrabold text-indigo-600 mt-1 block">{reviewStats.toCreateGroup}</span>
+                            </div>
+
+                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
+                                <span className="block text-xs font-bold text-gray-500 uppercase tracking-wider">New Skills</span>
+                                <span className="text-2xl font-extrabold text-teal-600 mt-1 block">{reviewStats.toCreateSkill}</span>
+                            </div>
+
+                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
+                                <span className="block text-xs font-bold text-gray-500 uppercase tracking-wider">New Positions</span>
+                                <span className="text-2xl font-extrabold text-purple-600 mt-1 block">{reviewStats.toCreatePosition}</span>
                             </div>
 
                             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
@@ -1981,8 +2669,15 @@ export default function App() {
                                                 <tr key={idx} className="hover:bg-gray-50/80 transition-colors">
                                                     <td className="p-4 text-center text-gray-400 font-mono text-xs">{idx + 1}</td>
                                                     <td className="p-4">
-                                                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${item.type === 'department' ? 'bg-blue-100 text-blue-800' : 'bg-indigo-100 text-indigo-800'}`}>
-                                                            {item.type === 'department' ? 'Department' : 'Employee Group'}
+                                                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                                                            item.type === 'department' ? 'bg-blue-100 text-blue-800' : 
+                                                            item.type === 'employee_group' ? 'bg-indigo-100 text-indigo-800' :
+                                                            item.type === 'skill' ? 'bg-teal-100 text-teal-800' :
+                                                            'bg-purple-100 text-purple-800'
+                                                        }`}>
+                                                            {item.type === 'department' ? 'Department' : 
+                                                             item.type === 'employee_group' ? 'Employee Group' :
+                                                             item.type === 'skill' ? 'Skill' : 'Position'}
                                                         </span>
                                                     </td>
                                                     <td className="p-4 font-bold text-gray-900">{item.name}</td>
@@ -2021,7 +2716,20 @@ export default function App() {
                                                                 {item.updatePayload.salaryCode2 && <div><span className="font-semibold text-gray-800">Sal Code 2:</span> {item.updatePayload.salaryCode2}</div>}
                                                             </div>
                                                         ) : null}
-                                                        {(item.type === 'department' && !(item.updatePayload?.number || item.number)) || (item.type === 'employee_group' && !item.updatePayload) ? (
+                                                        {item.type === 'skill' && item.updatePayload?.description && (
+                                                            <div><span className="font-semibold text-gray-800">Description:</span> {item.updatePayload.description}</div>
+                                                        )}
+                                                        {item.type === 'position' && item.updatePayload && (
+                                                            <div className="space-y-1">
+                                                                <div><span className="font-semibold text-gray-800">Department:</span> {item.updatePayload.departmentName}</div>
+                                                                <div><span className="font-semibold text-gray-800">Employee Group:</span> {item.updatePayload.employeeGroupName}</div>
+                                                                {item.updatePayload.skills && <div><span className="font-semibold text-gray-800">Skills:</span> {item.updatePayload.skills}</div>}
+                                                                {item.updatePayload.revenueUnitName && <div><span className="font-semibold text-gray-800">Rev Unit:</span> {item.updatePayload.revenueUnitName}</div>}
+                                                            </div>
+                                                        )}
+                                                        {(item.type === 'department' && !(item.updatePayload?.number || item.number)) || 
+                                                         (item.type === 'employee_group' && !item.updatePayload) ||
+                                                         (item.type === 'skill' && !item.updatePayload?.description) ? (
                                                             <span className="italic text-gray-400">None</span>
                                                         ) : null}
                                                     </td>
@@ -2131,21 +2839,30 @@ export default function App() {
                         {/* Actions */}
                         <div className="flex justify-between items-center pt-4">
                             <button 
-                                onClick={() => setStep(appMode === 'delete' && deleteInputMethod !== 'file' ? 1 : 2)}
+                                onClick={() => {
+                                    if (appMode === 'delete' && deleteInputMethod !== 'file') {
+                                        setStep(1);
+                                    } else if (appMode === 'import' && importInputMethod !== 'file') {
+                                        setStep(1);
+                                    } else {
+                                        setStep(2);
+                                    }
+                                }}
                                 className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-colors text-sm"
                             >
-                                {appMode === 'delete' && deleteInputMethod !== 'file' ? 'Back to Selection' : 'Back to Mapping'}
+                                {((appMode === 'delete' && deleteInputMethod !== 'file') || (appMode === 'import' && importInputMethod !== 'file')) ? 'Back to Selection' : 'Back to Mapping / Config'}
                             </button>
 
                             <button 
-                                onClick={() => {
-                                    if (reviewItems.filter(i => i.action === 'create' || i.action === 'delete' || i.action === 'update').length === 0) {
-                                        alert("There are no structure items to process.");
-                                        return;
-                                    }
-                                    setShowExecuteConfirm(true);
-                                }}
-                                className={`px-8 py-3.5 ${appMode === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'} text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all text-sm flex items-center gap-2`}
+                                onClick={() => setShowExecuteConfirm(true)}
+                                disabled={reviewItems.filter(i => i.action === 'create' || i.action === 'delete' || i.action === 'update').length === 0}
+                                className={`px-8 py-3.5 text-white font-bold rounded-xl shadow-lg transition-all text-sm flex items-center gap-2 ${
+                                    reviewItems.filter(i => i.action === 'create' || i.action === 'delete' || i.action === 'update').length === 0
+                                        ? 'bg-gray-400 cursor-not-allowed shadow-none'
+                                        : appMode === 'delete' 
+                                            ? 'bg-red-600 hover:bg-red-700 hover:shadow-xl' 
+                                            : 'bg-green-600 hover:bg-green-700 hover:shadow-xl'
+                                }`}
                             >
                                 <span>{appMode === 'delete' ? 'Confirm Deletions' : 'Confirm & Import Structure'}</span>
                                 <ArrowRightIcon className="w-5 h-5" />
@@ -2213,7 +2930,9 @@ export default function App() {
                                             <tr key={idx} className="hover:bg-gray-50">
                                                 <td className="p-3 text-center text-gray-400 font-mono text-xs">{idx + 1}</td>
                                                 <td className="p-3 font-medium text-xs">
-                                                    {item.type === 'department' ? 'Department' : 'Employee Group'}
+                                                    {item.type === 'department' ? 'Department' : 
+                                                     item.type === 'employee_group' ? 'Employee Group' :
+                                                     item.type === 'skill' ? 'Skill' : 'Position'}
                                                 </td>
                                                 <td className="p-3 font-bold text-gray-900">{item.name}</td>
                                                 <td className="p-3 text-xs">
@@ -2270,20 +2989,7 @@ export default function App() {
                 onClose={() => setShowTokenGuide(false)} 
             />
 
-            {/* Overwrite Confirmation Modal */}
-            <ConfirmModal 
-                isOpen={showOverwriteConfirm}
-                onClose={() => {
-                    setShowOverwriteConfirm(false);
-                    setOverwriteMode('keep');
-                }}
-                onConfirm={() => setShowOverwriteConfirm(false)}
-                title="⚠️ Danger: Overwrite Existing Structure?"
-                message="Selecting Overwrite will delete ALL existing Departments and Employee Groups in your Planday account before creating the new ones from your file. Are you sure you want to proceed?"
-                confirmText="Yes, Overwrite Existing"
-                cancelText="Cancel, Keep Existing"
-                isDangerous={true}
-            />
+
 
             {/* Execute Import Confirmation Modal */}
             <ConfirmModal 

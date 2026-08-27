@@ -14,7 +14,25 @@ export interface EmployeeGroup {
   name: string;
 }
 
-export type StructureItemType = 'department' | 'employee_group';
+export interface Skill {
+  id: number;
+  name: string;
+  description?: string;
+  isTimeLimited?: boolean;
+}
+
+export interface RevenueUnit {
+  id: number;
+  name: string;
+  departmentId: number;
+}
+
+export interface Position {
+  id: number;
+  name: string;
+}
+
+export type StructureItemType = 'department' | 'employee_group' | 'skill' | 'position';
 export type ImportAction = 'create' | 'skip_duplicate' | 'delete' | 'update';
 
 export interface StructureReviewItem {
@@ -34,6 +52,8 @@ export type OverwriteMode = 'keep' | 'overwrite';
 export interface CurrentStructure {
   departments: Department[];
   employeeGroups: EmployeeGroup[];
+  skills: Skill[];
+  revenueUnits: RevenueUnit[];
 }
 
 export interface ExcelParsedSheet {

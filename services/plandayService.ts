@@ -1,4 +1,4 @@
-import { PlandayApiCredentials, Department, EmployeeGroup } from '../types';
+import { PlandayApiCredentials, Department, EmployeeGroup, Skill, RevenueUnit, Position } from '../types';
 
 const AUTH_URL = 'https://id.planday.com/connect/token';
 const API_BASE_URL = 'https://openapi.planday.com';
@@ -141,6 +141,19 @@ async function fetchWithAuth(url: string, options: RequestInit = { method: 'GET'
     }
 }
 
+
+function extractIdFromLocation(response: Response): number {
+    const location = response.headers.get('Location') || response.headers.get('location');
+    if (location) {
+        const parts = location.split('/');
+        const last = parts[parts.length - 1] || parts[parts.length - 2];
+        if (last && !isNaN(parseInt(last, 10))) {
+            return parseInt(last, 10);
+        }
+    }
+    return 0;
+}
+
 export async function fetchPaginatedData(endpoint: string): Promise<any[]> {
     let allData: any[] = [];
     let offset = 0;
@@ -239,7 +252,12 @@ export async function createDepartment(name: string, number: string | null = nul
         throw new Error(`${response.status}: ${parseError(errText)}`);
     }
 
-    const result = await response.json();
+    const text = await response.text();
+    const extractedId = extractIdFromLocation(response);
+    const result = text ? JSON.parse(text) : { id: extractedId };
+    // Planday skills API uses skillId in responses, let's normalise it
+    if (result.skillId && !result.id) result.id = result.skillId;
+    if (result.data && result.data.skillId && !result.data.id) result.data.id = result.data.skillId;
     return result.data || result;
 }
 
@@ -296,7 +314,12 @@ export async function createEmployeeGroup(name: string): Promise<EmployeeGroup> 
         throw new Error(`${response.status}: ${parseError(errText)}`);
     }
 
-    const result = await response.json();
+    const text = await response.text();
+    const extractedId = extractIdFromLocation(response);
+    const result = text ? JSON.parse(text) : { id: extractedId };
+    // Planday skills API uses skillId in responses, let's normalise it
+    if (result.skillId && !result.id) result.id = result.skillId;
+    if (result.data && result.data.skillId && !result.data.id) result.data.id = result.data.skillId;
     return result.data || result;
 }
 
@@ -339,6 +362,66 @@ export async function deleteEmployeeGroup(id: number): Promise<void> {
         const errText = await response.text();
         throw new Error(`${response.status}: ${parseError(errText)}`);
     }
+}
+
+// --- Planday Skills API ---
+
+export async function fetchSkills(): Promise<Skill[]> {
+    const data = await fetchPaginatedData('/hr/v1.0/skills');
+    return data.map((item: any) => ({
+        ...item,
+        id: item.id || item.skillId || item.SkillId
+    }));
+}
+
+export async function createSkill(name: string, description: string = ''): Promise<Skill> {
+    const response = await fetchWithAuth(`${API_BASE_URL}/hr/v1.0/skills`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, description, isTimeLimited: false })
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`${response.status}: ${parseError(errText)}`);
+    }
+
+    const text = await response.text();
+    const extractedId = extractIdFromLocation(response);
+    const result = text ? JSON.parse(text) : { id: extractedId };
+    // Planday skills API uses skillId in responses, let's normalise it
+    if (result.skillId && !result.id) result.id = result.skillId;
+    if (result.data && result.data.skillId && !result.data.id) result.data.id = result.data.skillId;
+    return result.data || result;
+}
+
+// --- Planday Revenue Units API ---
+
+export async function fetchRevenueUnits(): Promise<RevenueUnit[]> {
+    return fetchPaginatedData('/revenue/v1.0/revenueunits');
+}
+
+// --- Planday Positions API ---
+
+export async function createPosition(payload: any): Promise<Position> {
+    const response = await fetchWithAuth(`${API_BASE_URL}/scheduling/v1.0/positions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`${response.status}: ${parseError(errText)}`);
+    }
+
+    const text = await response.text();
+    const extractedId = extractIdFromLocation(response);
+    const result = text ? JSON.parse(text) : { id: extractedId };
+    // Planday skills API uses skillId in responses, let's normalise it
+    if (result.skillId && !result.id) result.id = result.skillId;
+    if (result.data && result.data.skillId && !result.data.id) result.data.id = result.data.skillId;
+    return result.data || result;
 }
 
 export async function fetchPortalInfo(): Promise<any> {
