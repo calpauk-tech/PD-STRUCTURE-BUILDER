@@ -6,7 +6,8 @@ import type {
     EmployeeGroup, 
     StructureReviewItem, 
     OverwriteMode, 
-    CurrentStructure 
+    CurrentStructure,
+    Section
 } from './types';
 import { 
     initializeService, 
@@ -17,14 +18,26 @@ import {
     createEmployeeGroup, 
     deleteEmployeeGroup, 
     resetService, 
+    revokeToken, 
     fetchPortalInfo,
     updateEmployeeGroupDefaultRate,
     updateDepartment,
     fetchEmployeeGroupDefaultRates,
     fetchSkills,
     createSkill,
+    updateSkill,
+    deleteSkill,
+    fetchPositions,
+    fetchPositionById,
     fetchRevenueUnits,
-    createPosition
+    createPosition,
+    updatePosition,
+    deletePosition,
+    fetchSections,
+    fetchAllSections,
+    createSection,
+    updateSection,
+    deleteSection
 } from './services/plandayService';
 import { checkForUSDateFormat, parseDateWithFormat } from './utils/dateParsing';
 
@@ -42,6 +55,20 @@ const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (<svg cla
 const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>);
 const RefreshIcon: React.FC<{ className?: string }> = ({ className }) => (<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>);
 const StarIcon: React.FC<{ className?: string }> = ({ className }) => (<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>);
+const BriefcaseIcon: React.FC<{ className?: string }> = ({ className }) => (<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>);
+const SectionIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+    </svg>
+);
+
+const TYPE_ORDER: Record<string, number> = {
+    'department': 1,
+    'employee_group': 2,
+    'section': 3,
+    'position': 4,
+    'skill': 5
+};
 
 // --- Component Modals ---
 
@@ -200,17 +227,17 @@ export default function App() {
 
     const [appMode, setAppMode] = useState<'import' | 'update' | 'delete'>('import');
 
-    // Bulk Import state
-    const [importInputMethod, setImportInputMethod] = useState<'file' | 'text'>('file');
-    const [importDeptText, setImportDeptText] = useState('');
-    const [importGroupText, setImportGroupText] = useState('');
-
+    // Bulk Import state (File / Template upload)
+    
     // Bulk Delete / Update state
-    const [deleteInputMethod, setDeleteInputMethod] = useState<'text' | 'file' | 'selection'>('selection');
-    const [deleteDeptText, setDeleteDeptText] = useState('');
-    const [deleteGroupText, setDeleteGroupText] = useState('');
+    const [deleteInputMethod, setDeleteInputMethod] = useState<'file' | 'selection'>('file');
     const [deleteSelectedDepts, setDeleteSelectedDepts] = useState<Set<number>>(new Set());
     const [deleteSelectedGroups, setDeleteSelectedGroups] = useState<Set<number>>(new Set());
+    const [deleteSelectedSections, setDeleteSelectedSections] = useState<Set<number>>(new Set());
+    const [deleteSelectedPositions, setDeleteSelectedPositions] = useState<Set<number>>(new Set());
+    const [deleteSelectedSkills, setDeleteSelectedSkills] = useState<Set<number>>(new Set());
+    const [deleteSectionDeptId, setDeleteSectionDeptId] = useState<string>('');
+    const [deletePositionDeptId, setDeletePositionDeptId] = useState<string>('');
     const [deleteSearchTerm, setDeleteSearchTerm] = useState('');
 
     const [step, setStep] = useState<number>(0);
@@ -219,6 +246,7 @@ export default function App() {
         refreshToken: ''
     });
     const [isConnecting, setIsConnecting] = useState(false);
+    const [isDisconnecting, setIsDisconnecting] = useState(false);
     const [authError, setAuthError] = useState<string | null>(null);
     const [showTokenGuide, setShowTokenGuide] = useState(false);
     const [portalInfo, setPortalInfo] = useState<any>(null);
@@ -229,7 +257,10 @@ export default function App() {
     // Current Planday Structure fetched from API
     const [currentStructure, setCurrentStructure] = useState<CurrentStructure>({
         departments: [],
-        employeeGroups: []
+        employeeGroups: [],
+        skills: [],
+        positions: [],
+        sections: []
     });
 
     // Template options
@@ -238,6 +269,14 @@ export default function App() {
     const [includeSkills, setIncludeSkills] = useState(false);
     const [includeSections, setIncludeSections] = useState(false);
     const [includePositions, setIncludePositions] = useState(false);
+
+    // Current Structure Preview department filters
+    const [previewSectionDeptId, setPreviewSectionDeptId] = useState<string>('');
+    const [previewPositionDeptId, setPreviewPositionDeptId] = useState<string>('');
+
+    // Select from List department filters
+    const [selectListSectionDeptId, setSelectListSectionDeptId] = useState<string>('all');
+    const [selectListPositionDeptId, setSelectListPositionDeptId] = useState<string>('all');
 
     // File Import state
     const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
@@ -248,6 +287,7 @@ export default function App() {
 
     // Mapping state
     const [deptColumn, setDeptColumn] = useState<string>('');
+    const [deptUpdateNameColumn, setDeptUpdateNameColumn] = useState<string>('');
     const [groupColumn, setGroupColumn] = useState<string>('');
     const [deptNumberColumn, setDeptNumberColumn] = useState<string>('');
     const [wageTypeColumn, setWageTypeColumn] = useState<string>('');
@@ -258,6 +298,12 @@ export default function App() {
     // Skills Mapping State
     const [skillNameColumn, setSkillNameColumn] = useState<string>('');
     const [skillDescColumn, setSkillDescColumn] = useState<string>('');
+
+    // Sections Mapping State
+    const [sectionNameColumn, setSectionNameColumn] = useState<string>('');
+    const [sectionDeptColumn, setSectionDeptColumn] = useState<string>('');
+    const [sectionColorColumn, setSectionColorColumn] = useState<string>('');
+    const [sectionUpdateNameColumn, setSectionUpdateNameColumn] = useState<string>('');
 
     // Positions Mapping State
     const [posNameColumn, setPosNameColumn] = useState<string>('');
@@ -277,7 +323,9 @@ export default function App() {
     const [reviewTab, setReviewTab] = useState<'all' | 'create' | 'skip' | 'delete' | 'update'>('all');
     const [reviewSearch, setReviewSearch] = useState('');
     const [newItemName, setNewItemName] = useState('');
-    const [newItemType, setNewItemType] = useState<'department' | 'employee_group' | 'skill' | 'position'>('department');
+    const [newItemType, setNewItemType] = useState<'department' | 'employee_group' | 'skill' | 'position' | 'section'>('department');
+    const [newItemDeptId, setNewItemDeptId] = useState<number | ''>('');
+    const [newItemColor, setNewItemColor] = useState<string>('');
 
     // Execution state
     const [isExecuting, setIsExecuting] = useState(false);
@@ -310,6 +358,7 @@ export default function App() {
     }, []);    // Helper: auto-detect column matching
     const autoDetectColumns = (headers: string[]) => {
         let detectedDept = '';
+        let detectedDeptUpdateName = '';
         let detectedGroup = '';
         let detectedDeptNum = '';
         let detectedWageType = '';
@@ -319,6 +368,11 @@ export default function App() {
 
         let detSkillName = '';
         let detSkillDesc = '';
+
+        let detSectionName = '';
+        let detSectionDept = '';
+        let detSectionColor = '';
+        let detSectionUpdateName = '';
 
         let detPosName = '';
         let detPosDept = '';
@@ -334,30 +388,121 @@ export default function App() {
         for (const h of headers) {
             const clean = h.trim().toLowerCase();
             
-            if (!detectedDept && (clean === 'departments' || clean === 'department' || clean === 'dept' || clean === 'afdeling')) {
-                detectedDept = h;
+            // UPDATE - Department Name (renaming target)
+            if (!detectedDeptUpdateName && (
+                clean.includes('update - department name') ||
+                clean.includes('update - dept name') ||
+                clean.includes('update department name') ||
+                clean.includes('update dept name') ||
+                clean.includes('new department name') ||
+                clean.includes('new dept name') ||
+                clean === 'update - department' ||
+                clean === 'new department'
+            )) {
+                detectedDeptUpdateName = h;
             }
-            if (!detectedDeptNum && (clean.includes('department number') || clean.includes('dept number'))) {
+
+            // UPDATE - Department Number / Department Number
+            if (!detectedDeptNum && (
+                clean.includes('update - department number') ||
+                clean.includes('update - dept number') ||
+                clean.includes('update department number') ||
+                clean.includes('update dept number') ||
+                clean.includes('department number') || 
+                clean.includes('dept number')
+            )) {
                 detectedDeptNum = h;
             }
+
+            // Current / Identifier Department Name
+            if (!detectedDept && 
+                !clean.includes('update') && 
+                !clean.includes('new') && 
+                !clean.includes('section') && 
+                !clean.includes('position') && 
+                (
+                    clean === 'departments' || 
+                    clean === 'department' || 
+                    clean === 'dept' || 
+                    clean === 'department name' || 
+                    clean === 'dept name' || 
+                    clean === 'current department' ||
+                    clean === 'current department name' ||
+                    clean === 'afdeling'
+                )
+            ) {
+                detectedDept = h;
+            }
+
             if (!detectedGroup && (clean.includes('employee group') || clean === 'employee groups' || clean === 'role' || clean === 'stilling')) {
                 detectedGroup = h;
             }
             if (!detectedWageType && (clean.includes('wage type') || clean.includes('default wage type'))) {
                 detectedWageType = h;
             }
-            if (!detectedRate && (clean === 'rate' || clean === 'hourly rate' || clean === 'shift rate')) {
+            if (!detectedRate && !clean.includes('wage type') && (
+                clean === 'rate' || 
+                clean === 'hourly rate' || 
+                clean === 'shift rate' || 
+                clean === 'group: default rate' || 
+                clean === 'default rate' || 
+                clean.includes('default rate')
+            )) {
                 detectedRate = h;
             }
-            if (!detectedSalCode && (clean === 'salary code' || clean === 'salarycode')) {
+            if (!detectedSalCode && (
+                clean === 'salary code' || 
+                clean === 'salarycode' || 
+                clean === 'group: salary code' || 
+                (clean.includes('salary code') && !clean.includes('2'))
+            )) {
                 detectedSalCode = h;
             }
-            if (!detectedSalCode2 && (clean.includes('salary code 2'))) {
+            if (!detectedSalCode2 && (
+                clean.includes('salary code 2')
+            )) {
                 detectedSalCode2 = h;
             }
 
-            if (!detSkillName && clean.includes('skill: name')) detSkillName = h;
+            if (!detSkillName && (clean.includes('skill: name') || clean === 'skills' || clean === 'skill' || clean === 'skill name')) detSkillName = h;
             if (!detSkillDesc && clean.includes('skill: description')) detSkillDesc = h;
+
+            // Section Column detection
+            if (!detSectionUpdateName && (
+                clean.includes('update - section name') ||
+                clean.includes('update section name') ||
+                clean.includes('new section name') ||
+                clean === 'update - section'
+            )) {
+                detSectionUpdateName = h;
+            }
+
+            if (!detSectionName && (
+                clean.includes('section: name') ||
+                clean === 'section name' ||
+                clean === 'section' ||
+                clean === 'sections'
+            ) && !clean.includes('position') && !clean.includes('update')) {
+                detSectionName = h;
+            }
+
+            if (!detSectionDept && (
+                clean.includes('section: department') ||
+                clean.includes('section: dept') ||
+                clean === 'section department' ||
+                clean === 'section dept'
+            )) {
+                detSectionDept = h;
+            }
+
+            if (!detSectionColor && (
+                clean.includes('section: color') ||
+                clean === 'section color' ||
+                clean.includes('section color hex') ||
+                clean === 'section color hex # (optional)'
+            )) {
+                detSectionColor = h;
+            }
 
             if (!detPosName && clean.includes('position: name')) detPosName = h;
             if (!detPosDept && clean.includes('position: department')) detPosDept = h;
@@ -372,6 +517,7 @@ export default function App() {
         }
 
         setDeptColumn(detectedDept);
+        setDeptUpdateNameColumn(detectedDeptUpdateName);
         setGroupColumn(detectedGroup);
         setDeptNumberColumn(detectedDeptNum);
         setWageTypeColumn(detectedWageType);
@@ -381,6 +527,11 @@ export default function App() {
 
         setSkillNameColumn(detSkillName);
         setSkillDescColumn(detSkillDesc);
+
+        setSectionNameColumn(detSectionName);
+        setSectionDeptColumn(detSectionDept);
+        setSectionColorColumn(detSectionColor);
+        setSectionUpdateNameColumn(detSectionUpdateName);
 
         setPosNameColumn(detPosName);
         setPosDeptColumn(detPosDept);
@@ -413,19 +564,23 @@ export default function App() {
 
         try {
             initializeService(credsToUse);
-            const [depts, groups, info, skills, revenueUnits] = await Promise.all([
+            const [depts, groups, info, skills, revUnits] = await Promise.all([
                 fetchDepartments(),
                 fetchEmployeeGroups(),
                 fetchPortalInfo().catch(() => null),
                 fetchSkills().catch(() => []),
                 fetchRevenueUnits().catch(() => [])
             ]);
+            const positions = await fetchPositions(skills).catch(() => []);
+            const sections = await fetchAllSections(depts).catch(() => []);
 
             setCurrentStructure({
                 departments: depts,
                 employeeGroups: groups,
                 skills,
-                revenueUnits
+                positions,
+                sections,
+                revenueUnits: revUnits
             });
             setPortalInfo(info);
             if (info?.name) setPortalName(info.name);
@@ -439,29 +594,56 @@ export default function App() {
         }
     };
 
-    const handleChangeCredentials = () => {
-        sessionStorage.removeItem('plandayCredentials');
-        setPortalName(null);
-        setPortalInfo(null);
-        resetService();
-        setStep(0);
+    const handleChangeCredentials = async () => {
+        setIsDisconnecting(true);
+        try {
+            await revokeToken();
+        } catch (error) {
+            console.error("Failed to revoke token:", error);
+        } finally {
+            sessionStorage.removeItem('plandayCredentials');
+            setPortalName(null);
+            setPortalInfo(null);
+            resetService();
+            setCredentials({
+                clientId: FIXED_CLIENT_ID,
+                refreshToken: ''
+            });
+            setCurrentStructure({
+                departments: [],
+                employeeGroups: [],
+                skills: [],
+                positions: [],
+                sections: []
+            });
+            setReviewItems([]);
+            setParsedHeaders([]);
+            setParsedRows([]);
+            setUploadedFileName(null);
+            setStep(0);
+            setIsDisconnecting(false);
+        }
     };
 
     const handleManualRefresh = async () => {
         setIsLoading(true);
         try {
-            const [depts, groups, info, skills, revenueUnits] = await Promise.all([
+            const [depts, groups, info, skills, revUnits] = await Promise.all([
                 fetchDepartments(),
                 fetchEmployeeGroups(),
                 fetchPortalInfo().catch(() => null),
                 fetchSkills().catch(() => []),
                 fetchRevenueUnits().catch(() => [])
             ]);
+            const positions = await fetchPositions(skills).catch(() => []);
+            const sections = await fetchAllSections(depts).catch(() => []);
             setCurrentStructure({
                 departments: depts,
                 employeeGroups: groups,
                 skills,
-                revenueUnits
+                positions,
+                sections,
+                revenueUnits: revUnits
             });
             setPortalInfo(info);
             if (info?.name) setPortalName(info.name);
@@ -472,13 +654,350 @@ export default function App() {
         }
     };
 
-    // Step 2: Download Current Structure Excel
+    // Helper: Build "Reference Data" sheet listing all API IDs next to descriptive names
+    // Reflects the selections made: only types currently selected will be visible
+    const buildReferenceDataSheet = (opts?: {
+        includeDepartments?: boolean;
+        includeSections?: boolean;
+        includeEmployeeGroups?: boolean;
+        includeSkills?: boolean;
+        includePositions?: boolean;
+    }) => {
+        const rows: any[][] = [];
+        const cellStyles: { r: number; c: number; s: any }[] = [];
+
+        const deptHeaderStyle = {
+            font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11 },
+            fill: { fgColor: { rgb: "1E3A8A" } }, // Dark Navy Blue (Departments)
+            alignment: { horizontal: "left" }
+        };
+
+        const groupHeaderStyle = {
+            font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11 },
+            fill: { fgColor: { rgb: "6B21A8" } }, // Purple (Employee Groups)
+            alignment: { horizontal: "left" }
+        };
+
+        const sectionHeaderStyle = {
+            font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11 },
+            fill: { fgColor: { rgb: "374151" } }, // Dark Grey (Sections)
+            alignment: { horizontal: "left" }
+        };
+
+        const positionHeaderStyle = {
+            font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11 },
+            fill: { fgColor: { rgb: "0F766E" } }, // Teal (Positions)
+            alignment: { horizontal: "left" }
+        };
+
+        const skillHeaderStyle = {
+            font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11 },
+            fill: { fgColor: { rgb: "854D0E" } }, // Dark Yellow (Skills)
+            alignment: { horizontal: "left" }
+        };
+
+        const colHeaderStyle = {
+            font: { bold: true, color: { rgb: "1E293B" }, sz: 10 },
+            fill: { fgColor: { rgb: "E2E8F0" } }, // Slate 200
+            alignment: { horizontal: "left" },
+            border: {
+                bottom: { style: "thin", color: { rgb: "94A3B8" } }
+            }
+        };
+
+        const dataTextStyle = {
+            font: { color: { rgb: "1E293B" }, sz: 10 },
+            alignment: { horizontal: "left" }
+        };
+
+        const dataIdStyle = {
+            font: { bold: true, color: { rgb: "0F172A" }, sz: 10 },
+            alignment: { horizontal: "left" }
+        };
+
+        const emptyStyle = {
+            font: { italic: true, color: { rgb: "64748B" }, sz: 10 },
+            alignment: { horizontal: "left" }
+        };
+
+        let currentRow = 0;
+
+        const showDepts = opts?.includeDepartments !== undefined ? opts.includeDepartments : includeDepartments;
+        const showGroups = opts?.includeEmployeeGroups !== undefined ? opts.includeEmployeeGroups : includeEmployeeGroups;
+        const showSections = opts?.includeSections !== undefined ? opts.includeSections : includeSections;
+        const showPositions = opts?.includePositions !== undefined ? opts.includePositions : includePositions;
+        const showSkills = opts?.includeSkills !== undefined ? opts.includeSkills : includeSkills;
+
+        let hasAnySection = false;
+
+        // 1. Section: Departments (only if selected)
+        if (showDepts) {
+            hasAnySection = true;
+            rows.push(["DEPARTMENTS", "", ""]);
+            cellStyles.push({ r: currentRow, c: 0, s: deptHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 1, s: deptHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 2, s: deptHeaderStyle });
+            currentRow++;
+
+            rows.push(["Department Name", "API ID", "Department Number"]);
+            cellStyles.push({ r: currentRow, c: 0, s: colHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 1, s: colHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 2, s: colHeaderStyle });
+            currentRow++;
+
+            if (currentStructure.departments && currentStructure.departments.length > 0) {
+                currentStructure.departments.forEach(dept => {
+                    rows.push([dept.name, dept.id, dept.number || ""]);
+                    cellStyles.push({ r: currentRow, c: 0, s: dataTextStyle });
+                    cellStyles.push({ r: currentRow, c: 1, s: dataIdStyle });
+                    cellStyles.push({ r: currentRow, c: 2, s: dataTextStyle });
+                    currentRow++;
+                });
+            } else {
+                rows.push(["(No departments found in Planday)", "", ""]);
+                cellStyles.push({ r: currentRow, c: 0, s: emptyStyle });
+                currentRow++;
+            }
+
+            // Spacing row
+            rows.push(["", "", ""]);
+            currentRow++;
+        }
+
+        // 2. Section: Employee Groups (only if selected)
+        if (showGroups) {
+            hasAnySection = true;
+            rows.push(["EMPLOYEE GROUPS", "", ""]);
+            cellStyles.push({ r: currentRow, c: 0, s: groupHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 1, s: groupHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 2, s: groupHeaderStyle });
+            currentRow++;
+
+            rows.push(["Employee Group Name", "API ID", ""]);
+            cellStyles.push({ r: currentRow, c: 0, s: colHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 1, s: colHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 2, s: colHeaderStyle });
+            currentRow++;
+
+            if (currentStructure.employeeGroups && currentStructure.employeeGroups.length > 0) {
+                currentStructure.employeeGroups.forEach(group => {
+                    rows.push([group.name, group.id, ""]);
+                    cellStyles.push({ r: currentRow, c: 0, s: dataTextStyle });
+                    cellStyles.push({ r: currentRow, c: 1, s: dataIdStyle });
+                    currentRow++;
+                });
+            } else {
+                rows.push(["(No employee groups found in Planday)", "", ""]);
+                cellStyles.push({ r: currentRow, c: 0, s: emptyStyle });
+                currentRow++;
+            }
+
+            // Spacing row
+            rows.push(["", "", ""]);
+            currentRow++;
+        }
+
+        // 3. Section: Sections (only if selected)
+        if (showSections) {
+            hasAnySection = true;
+            rows.push(["SECTIONS", "", ""]);
+            cellStyles.push({ r: currentRow, c: 0, s: sectionHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 1, s: sectionHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 2, s: sectionHeaderStyle });
+            currentRow++;
+
+            rows.push(["Section Name", "API ID", "Department / Color"]);
+            cellStyles.push({ r: currentRow, c: 0, s: colHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 1, s: colHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 2, s: colHeaderStyle });
+            currentRow++;
+
+            if (currentStructure.sections && currentStructure.sections.length > 0) {
+                const deptMap = new Map<number, string>(currentStructure.departments.map(d => [d.id, d.name]));
+                currentStructure.sections.forEach(sec => {
+                    const deptName = deptMap.get(sec.departmentId) || `Dept ID: ${sec.departmentId}`;
+                    const details = [deptName, sec.color ? `Color: ${sec.color}` : ''].filter(Boolean).join(' | ');
+                    rows.push([sec.name, sec.id, details]);
+                    cellStyles.push({ r: currentRow, c: 0, s: dataTextStyle });
+                    cellStyles.push({ r: currentRow, c: 1, s: dataIdStyle });
+                    cellStyles.push({ r: currentRow, c: 2, s: dataTextStyle });
+                    currentRow++;
+                });
+            } else {
+                rows.push(["(No sections found in Planday)", "", ""]);
+                cellStyles.push({ r: currentRow, c: 0, s: emptyStyle });
+                currentRow++;
+            }
+
+            // Spacing row
+            rows.push(["", "", ""]);
+            currentRow++;
+        }
+
+        // 4. Section: Positions (only if positions is selected)
+        if (showPositions) {
+            hasAnySection = true;
+            rows.push(["POSITIONS", "", ""]);
+            cellStyles.push({ r: currentRow, c: 0, s: positionHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 1, s: positionHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 2, s: positionHeaderStyle });
+            currentRow++;
+
+            rows.push(["Position Name", "API ID", "Associated Department / Group"]);
+            cellStyles.push({ r: currentRow, c: 0, s: colHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 1, s: colHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 2, s: colHeaderStyle });
+            currentRow++;
+
+            if (currentStructure.positions && currentStructure.positions.length > 0) {
+                const deptMap = new Map<number, string>(currentStructure.departments.map(d => [d.id, d.name]));
+                const groupMap = new Map<number, string>(currentStructure.employeeGroups.map(g => [g.id, g.name]));
+                currentStructure.positions.forEach(pos => {
+                    const deptName = pos.departmentId ? deptMap.get(pos.departmentId) : undefined;
+                    const groupName = pos.employeeGroupId ? groupMap.get(pos.employeeGroupId) : undefined;
+                    const details: string[] = [];
+                    if (deptName) details.push(`Dept: ${deptName}`);
+                    else if (pos.departmentId) details.push(`Dept ID: ${pos.departmentId}`);
+                    if (groupName) details.push(`Group: ${groupName}`);
+                    else if (pos.employeeGroupId) details.push(`Group ID: ${pos.employeeGroupId}`);
+                    if (pos.sectionId && currentStructure.sections) {
+                        const sec = currentStructure.sections.find(s => s.id === pos.sectionId);
+                        if (sec) details.push(`Section: ${sec.name}`);
+                    }
+                    if (pos.revenueUnitId && currentStructure.revenueUnits) {
+                        const ru = currentStructure.revenueUnits.find(r => r.id === pos.revenueUnitId);
+                        if (ru) details.push(`Revenue Unit: ${ru.name}`);
+                        else details.push(`RevUnit ID: ${pos.revenueUnitId}`);
+                    }
+                    if (pos.affectRevenue !== undefined) {
+                        details.push(`Include in Payroll: ${pos.affectRevenue}`);
+                    }
+                    if (pos.skillIds && pos.skillIds.length > 0 && currentStructure.skills) {
+                        const sNames = currentStructure.skills.filter(s => pos.skillIds?.includes(s.id)).map(s => s.name).join(', ');
+                        if (sNames) details.push(`Skills: ${sNames}`);
+                    }
+
+                    rows.push([pos.name, pos.id, details.join(' | ')]);
+                    cellStyles.push({ r: currentRow, c: 0, s: dataTextStyle });
+                    cellStyles.push({ r: currentRow, c: 1, s: dataIdStyle });
+                    cellStyles.push({ r: currentRow, c: 2, s: dataTextStyle });
+                    currentRow++;
+                });
+            } else {
+                rows.push(["(No positions found in Planday)", "", ""]);
+                cellStyles.push({ r: currentRow, c: 0, s: emptyStyle });
+                currentRow++;
+            }
+
+            // Spacing row
+            rows.push(["", "", ""]);
+            currentRow++;
+        }
+
+        // 5. Section: Skills (only if selected)
+        if (showSkills) {
+            hasAnySection = true;
+            rows.push(["SKILLS", "", ""]);
+            cellStyles.push({ r: currentRow, c: 0, s: skillHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 1, s: skillHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 2, s: skillHeaderStyle });
+            currentRow++;
+
+            rows.push(["Skill Name", "API ID", "Description"]);
+            cellStyles.push({ r: currentRow, c: 0, s: colHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 1, s: colHeaderStyle });
+            cellStyles.push({ r: currentRow, c: 2, s: colHeaderStyle });
+            currentRow++;
+
+            if (currentStructure.skills && currentStructure.skills.length > 0) {
+                currentStructure.skills.forEach(skill => {
+                    rows.push([skill.name, skill.id, skill.description || ""]);
+                    cellStyles.push({ r: currentRow, c: 0, s: dataTextStyle });
+                    cellStyles.push({ r: currentRow, c: 1, s: dataIdStyle });
+                    cellStyles.push({ r: currentRow, c: 2, s: dataTextStyle });
+                    currentRow++;
+                });
+            } else {
+                rows.push(["(No skills found in Planday)", "", ""]);
+                cellStyles.push({ r: currentRow, c: 0, s: emptyStyle });
+                currentRow++;
+            }
+
+            // Spacing row
+            rows.push(["", "", ""]);
+            currentRow++;
+        }
+
+        if (!hasAnySection) {
+            rows.push(["(No structure types selected for reference data)", "", ""]);
+            cellStyles.push({ r: currentRow, c: 0, s: emptyStyle });
+            currentRow++;
+        }
+
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+
+        // Apply styles to sheet
+        cellStyles.forEach(({ r, c, s }) => {
+            const addr = XLSX.utils.encode_cell({ r, c });
+            if (!ws[addr]) {
+                ws[addr] = { t: 's', v: '' };
+            }
+            ws[addr].s = s;
+        });
+
+        ws['!cols'] = [
+            { wch: 38 }, // Descriptive Name
+            { wch: 18 }, // API ID
+            { wch: 38 }  // Additional info
+        ];
+
+        return ws;
+    };
+
+    // Helper: Determine distinct dark header background color by entity type for Excel template export files
+    // Departments: Dark Navy Blue (#1E3A8A)
+    // Employee Groups: Purple (#6B21A8)
+    // Sections: Dark Grey (#374151)
+    // Positions: Teal (#0F766E)
+    // Skills: Dark Yellow (#854D0E)
+    const getHeaderBgColor = (headerName: string): string => {
+        const h = (headerName || '').trim().toLowerCase();
+
+        // 1. Positions (check first: contains position-specific prefix or title)
+        if (h.startsWith('position') || h.includes('position')) {
+            return "0F766E"; // Teal (Positions)
+        }
+
+        // 2. Sections (check before department because 'Section: Department' exists)
+        if (h.startsWith('section') || h.includes('section')) {
+            return "374151"; // Dark Grey (Sections)
+        }
+
+        // 3. Skills
+        if (h.startsWith('skill') || h.includes('skill')) {
+            return "854D0E"; // Dark Yellow (Skills)
+        }
+
+        // 4. Employee Groups (includes group-level wage and salary fields)
+        if (h.startsWith('group:') || h.includes('employee group') || h.includes('wage') || h.includes('salary code')) {
+            return "6B21A8"; // Purple (Employee Groups)
+        }
+
+        // 5. Departments
+        if (h.includes('department')) {
+            return "1E3A8A"; // Dark Navy Blue (Departments)
+        }
+
+        return "1E293B"; // Dark Slate fallback
+    };
+
+    // Step 2: Download Current Structure Excel (Populated)
     const handleDownloadCurrentStructure = async () => {
         const wb = XLSX.utils.book_new();
         
         // Fetch wage rates if requested
         let wageRatesMap = new Map<number, any>();
-        if (includeEmployeeGroups && includeWageColumns) {
+        if (includeEmployeeGroups && includeWageColumns && appMode !== 'delete') {
             try {
                 const rates = await fetchEmployeeGroupDefaultRates();
                 rates.forEach(rate => {
@@ -493,118 +1012,227 @@ export default function App() {
         const maxLen = Math.max(
             includeDepartments ? currentStructure.departments.length : 0,
             includeEmployeeGroups ? currentStructure.employeeGroups.length : 0,
-            includeSkills ? currentStructure.skills.length : 0
+            includeSections ? (currentStructure.sections?.length || 0) : 0,
+            includePositions ? (currentStructure.positions?.length || 0) : 0,
+            includeSkills ? (currentStructure.skills?.length || 0) : 0
         );
         const data: any[] = [];
         
         for (let i = 0; i < Math.max(1, maxLen); i++) {
             const row: any = {};
             if (includeDepartments) {
-                row["Departments"] = currentStructure.departments[i]?.name || "";
-                row["Department Number (optional)"] = currentStructure.departments[i]?.number || "";
+                if (appMode === 'delete') {
+                    row["Departments"] = currentStructure.departments[i]?.name || "";
+                } else if (appMode === 'update') {
+                    row["Departments"] = currentStructure.departments[i]?.name || "";
+                    row["UPDATE - Department Name"] = "";
+                    row["Department Number (optional)"] = currentStructure.departments[i]?.number || "";
+                } else {
+                    row["Departments"] = currentStructure.departments[i]?.name || "";
+                    row["Department Number (optional)"] = currentStructure.departments[i]?.number || "";
+                }
             }
             if (includeEmployeeGroups) {
                 const group = currentStructure.employeeGroups[i];
-                row["Employee Groups"] = group?.name || "";
-                if (includeWageColumns) {
-                    const rateData = group ? wageRatesMap.get(group.id) : null;
-                    row["Default Wage Type (HourlyRate/ShiftRate)"] = rateData?.defaultWageType || "";
-                    row["Rate"] = rateData?.defaultWageType === 'HourlyRate' ? (rateData?.hourlyRate ?? "") : (rateData?.defaultWageType === 'ShiftRate' ? (rateData?.shiftRate ?? "") : "");
-                    row["Salary Code"] = rateData?.salaryCode || "";
-                    row["Salary Code 2 (Rare)"] = rateData?.salaryCode2 || "";
+                if (appMode === 'delete') {
+                    row["Employee Groups"] = group?.name || "";
+                } else if (appMode === 'update') {
+                    row["Employee Groups"] = group?.name || "";
+                    if (includeWageColumns) {
+                        const rateData = group ? wageRatesMap.get(group.id) : null;
+                        row["Group: Default Wage Type (HourlyRate/ShiftRate)"] = rateData?.defaultWageType || "";
+                        row["Group: Default Rate"] = rateData?.defaultWageType === 'HourlyRate' ? (rateData?.hourlyRate ?? "") : (rateData?.defaultWageType === 'ShiftRate' ? (rateData?.shiftRate ?? "") : "");
+                        row["Group: Salary Code"] = rateData?.salaryCode || "";
+                        row["Group: Salary Code 2 (needs activation)"] = rateData?.salaryCode2 || "";
+                    }
+                } else {
+                    row["Employee Groups"] = group?.name || "";
+                    if (includeWageColumns) {
+                        const rateData = group ? wageRatesMap.get(group.id) : null;
+                        row["Group: Default Wage Type (HourlyRate/ShiftRate)"] = rateData?.defaultWageType || "";
+                        row["Group: Default Rate"] = rateData?.defaultWageType === 'HourlyRate' ? (rateData?.hourlyRate ?? "") : (rateData?.defaultWageType === 'ShiftRate' ? (rateData?.shiftRate ?? "") : "");
+                        row["Group: Salary Code"] = rateData?.salaryCode || "";
+                        row["Group: Salary Code 2 (needs activation)"] = rateData?.salaryCode2 || "";
+                    }
+                }
+            }
+            if (includeSections) {
+                const sec = currentStructure.sections?.[i];
+                const deptName = sec?.departmentId ? (currentStructure.departments.find(d => d.id === sec.departmentId)?.name || "") : "";
+                if (appMode === 'delete') {
+                    row["Section: Name"] = sec?.name || "";
+                    row["Section: Department"] = deptName;
+                } else if (appMode === 'update') {
+                    row["Section: Name"] = sec?.name || "";
+                    row["Section: Department"] = deptName;
+                    row["UPDATE - Section Name"] = "";
+                    row["Section: Color Hex # (optional)"] = sec?.color || "";
+                } else {
+                    row["Section: Name"] = sec?.name || "";
+                    row["Section: Department"] = deptName;
+                    row["Section: Color Hex # (optional)"] = sec?.color || "";
+                }
+            }
+            if (includePositions) {
+                if (appMode === 'delete') {
+                    row["Positions"] = currentStructure.positions?.[i]?.name || "";
+                } else if (appMode === 'update') {
+                    row["Positions"] = currentStructure.positions?.[i]?.name || "";
+                    row["UPDATE - Position Name"] = "";
+                } else {
+                    const pos = currentStructure.positions?.[i];
+                    const deptName = pos?.departmentId ? (currentStructure.departments.find(d => d.id === pos.departmentId)?.name || "") : "";
+                    const groupName = pos?.employeeGroupId ? (currentStructure.employeeGroups.find(g => g.id === pos.employeeGroupId)?.name || "") : "";
+                    const secName = pos?.sectionId ? (currentStructure.sections?.find(s => s.id === pos.sectionId)?.name || "") : "";
+                    const revUnitName = pos?.revenueUnitId ? (currentStructure.revenueUnits?.find(r => r.id === pos.revenueUnitId)?.name || "") : "";
+                    let skillNames = "";
+                    if (pos?.skillIds && currentStructure.skills) {
+                        skillNames = currentStructure.skills.filter(s => pos.skillIds?.includes(s.id)).map(s => s.name).join(', ');
+                    }
+                    row["Position: Department"] = deptName;
+                    row["Position: Section (optional)"] = secName;
+                    row["Position: Employee Group"] = groupName;
+                    row["Position: Name"] = pos?.name || "";
+                    row["Position: Color Hex # (optional)"] = pos?.color || "";
+                    row["Position: Valid from (optional)"] = pos?.validFrom || "";
+                    row["Position: Valid to (optional)"] = pos?.validTo || "";
+                    row["Position: Skills (optional)"] = skillNames;
+                    row["Position: Include in Payroll % - true/false"] = pos?.affectRevenue !== undefined ? String(pos.affectRevenue) : "";
+                    row["Position: Revenue Unit"] = revUnitName;
                 }
             }
             if (includeSkills) {
-                row["Skill: Name"] = currentStructure.skills[i]?.name || "";
-                row["Skill: Description"] = currentStructure.skills[i]?.description || "";
-            }
-            if (includePositions) {
-                row["Position: Department"] = "";
-                row["Position: Section (optional)"] = "";
-                row["Position: Employee Group"] = "";
-                row["Position: Name"] = "";
-                row["Position: Color Hex # (optional)"] = "";
-                row["Position: Valid from (optional)"] = "";
-                row["Position: Valid to (optional)"] = "";
-                row["Position: Skills (optional)"] = "";
-                row["Position: Include in Payroll % - true/false"] = "";
-                row["Position: Revenue Unit"] = "";
-            }
-            if (includeSections) {
-                row["Section: Coming soon.."] = "";
+                if (appMode === 'delete') {
+                    row["Skills"] = currentStructure.skills[i]?.name || "";
+                } else {
+                    row["Skill: Name"] = currentStructure.skills[i]?.name || "";
+                    row["Skill: Description"] = currentStructure.skills[i]?.description || "";
+                }
             }
             data.push(row);
         }
 
         const ws = XLSX.utils.json_to_sheet(data);
 
-        // Styling
-        const headerStyle = {
-            font: { bold: true, color: { rgb: "FFFFFF" } },
-            fill: { fgColor: { rgb: "1E40AF" } }, // Deep Blue
-            alignment: { horizontal: "center" }
-        };
-
+        // Styling: Each structure type has a distinct dark background color for clear visual recognition
         const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
         for (let C = range.s.c; C <= range.e.c; ++C) {
             const cellAddress = XLSX.utils.encode_cell({ r: 0, c: C });
             if (ws[cellAddress]) {
-                ws[cellAddress].s = headerStyle;
+                const headerText = String(ws[cellAddress].v || '');
+                const bg = getHeaderBgColor(headerText);
+                ws[cellAddress].s = {
+                    font: { bold: true, color: { rgb: "FFFFFF" } },
+                    fill: { fgColor: { rgb: bg } },
+                    alignment: { horizontal: "center" }
+                };
             }
         }
 
-        ws['!cols'] = [
-            { wch: 35 },
-            { wch: 35 }
-        ];
+        const colCount = Math.max(Object.keys(data[0] || {}).length, 2);
+        ws['!cols'] = Array(colCount).fill({ wch: 32 });
 
-        XLSX.utils.book_append_sheet(wb, ws, "Planday Structure");
-        XLSX.writeFile(wb, `Planday_Structure_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    };    // Step 2: Download Blank Excel Template
+        const mainSheetName = appMode === 'delete' ? "Items to Delete" : appMode === 'update' ? "Planday Update" : "Planday Structure";
+        XLSX.utils.book_append_sheet(wb, ws, mainSheetName);
+
+        // Always include second sheet for "Reference Data" listing all API IDs next to descriptive names reflecting selection
+        const refWs = buildReferenceDataSheet();
+        XLSX.utils.book_append_sheet(wb, refWs, "Reference Data");
+
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const fileName = appMode === 'delete'
+            ? `Planday_Delete_Structure_${dateStr}.xlsx`
+            : appMode === 'update'
+                ? `Planday_Update_Structure_${dateStr}.xlsx`
+                : `Planday_Structure_${dateStr}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+    };
+
+    // Step 2: Download Blank Excel Template
     const handleDownloadBlankTemplate = () => {
         const wb = XLSX.utils.book_new();
         const headers: string[] = [];
         if (includeDepartments) {
-            headers.push("Departments", "Department Number (optional)");
+            if (appMode === 'delete') {
+                headers.push("Departments");
+            } else if (appMode === 'update') {
+                headers.push("Departments", "UPDATE - Department Name", "Department Number (optional)");
+            } else {
+                headers.push("Departments", "Department Number (optional)");
+            }
         }
         if (includeEmployeeGroups) {
-            headers.push("Employee Groups");
-            if (includeWageColumns) {
-                headers.push("Default Wage Type (HourlyRate/ShiftRate)", "Rate", "Salary Code", "Salary Code 2 (Rare)");
+            if (appMode === 'delete') {
+                headers.push("Employee Groups");
+            } else if (appMode === 'update') {
+                headers.push("Employee Groups");
+                if (includeWageColumns) {
+                    headers.push("Group: Default Wage Type (HourlyRate/ShiftRate)", "Group: Default Rate", "Group: Salary Code", "Group: Salary Code 2 (needs activation)");
+                }
+            } else {
+                headers.push("Employee Groups");
+                if (includeWageColumns) {
+                    headers.push("Group: Default Wage Type (HourlyRate/ShiftRate)", "Group: Default Rate", "Group: Salary Code", "Group: Salary Code 2 (needs activation)");
+                }
+            }
+        }
+        if (includeSections) {
+            if (appMode === 'delete') {
+                headers.push("Section: Name", "Section: Department");
+            } else if (appMode === 'update') {
+                headers.push("Section: Name", "Section: Department", "UPDATE - Section Name", "Section: Color Hex # (optional)");
+            } else {
+                headers.push("Section: Name", "Section: Department", "Section: Color Hex # (optional)");
+            }
+        }
+        if (includePositions) {
+            if (appMode === 'delete') {
+                headers.push("Positions");
+            } else if (appMode === 'update') {
+                headers.push("Positions", "UPDATE - Position Name");
+            } else {
+                headers.push(
+                    "Position: Department",
+                    "Position: Section (optional)",
+                    "Position: Employee Group",
+                    "Position: Name",
+                    "Position: Color Hex # (optional)",
+                    "Position: Valid from (optional)",
+                    "Position: Valid to (optional)",
+                    "Position: Skills (optional)",
+                    "Position: Include in Payroll % - true/false",
+                    "Position: Revenue Unit"
+                );
             }
         }
         if (includeSkills) {
-            headers.push("Skill: Name", "Skill: Description");
-        }
-        if (includeSections) {
-            headers.push("Section: Coming soon..");
-        }
-        if (includePositions) {
-            headers.push(
-                "Position: Department",
-                "Position: Section (optional)",
-                "Position: Employee Group",
-                "Position: Name",
-                "Position: Color Hex # (optional)",
-                "Position: Valid from (optional)",
-                "Position: Valid to (optional)",
-                "Position: Skills (optional)",
-                "Position: Include in Payroll % - true/false",
-                "Position: Revenue Unit"
-            );
+            if (appMode === 'delete') {
+                headers.push("Skills");
+            } else {
+                headers.push("Skill: Name", "Skill: Description");
+            }
         }
 
         const sampleRows = [
             headers.reduce((acc, h) => {
                 acc[h] = "";
                 if (h === "Departments") acc[h] = "e.g. Care Home Burnley";
+                else if (h === "UPDATE - Department Name") acc[h] = "e.g. Care Home Burnley North";
                 else if (h === "Department Number (optional)") acc[h] = "e.g. 101";
+                else if (h === "Section: Name") acc[h] = "e.g. Ground Floor";
+                else if (h === "Section: Department") acc[h] = "e.g. Care Home Burnley";
+                else if (h === "UPDATE - Section Name") acc[h] = "e.g. Ground Floor North";
+                else if (h === "Section: Color Hex # (optional)") acc[h] = "#2CD08E";
                 else if (h === "Employee Groups") acc[h] = "e.g. General Nurses";
-                else if (h === "Default Wage Type (HourlyRate/ShiftRate)") acc[h] = "HourlyRate";
-                else if (h === "Rate") acc[h] = "15.50";
-                else if (h === "Salary Code") acc[h] = "SC1";
-                else if (h === "Salary Code 2 (Rare)") acc[h] = "";
+                else if (h === "Skills") acc[h] = "e.g. Drivers License";
+                else if (h === "Positions") acc[h] = "e.g. Senior Nurse";
+                else if (h === "UPDATE - Position Name") acc[h] = "e.g. Lead Nurse";
+                else if (h === "Group: Default Wage Type (HourlyRate/ShiftRate)" || h === "Default Wage Type (HourlyRate/ShiftRate)") acc[h] = "HourlyRate";
+                else if (h === "Group: Default Rate" || h === "Rate") acc[h] = "15.50";
+                else if (h === "Group: Salary Code" || h === "Salary Code") acc[h] = "SC1";
+                else if (h === "Group: Salary Code 2 (needs activation)" || h === "Salary Code 2 (Rare)") acc[h] = "";
                 else if (h === "Skill: Name") acc[h] = "e.g. Drivers License";
+                else if (h === "Skill: Description") acc[h] = "Valid category B license";
                 else if (h === "Position: Department") acc[h] = "e.g. Care Home Burnley";
                 else if (h === "Position: Employee Group") acc[h] = "e.g. General Nurses";
                 else if (h === "Position: Name") acc[h] = "e.g. General Nurse";
@@ -614,24 +1242,37 @@ export default function App() {
 
         const ws = XLSX.utils.json_to_sheet(sampleRows);
 
-        const headerStyle = {
-            font: { bold: true, color: { rgb: "FFFFFF" } },
-            fill: { fgColor: { rgb: "2563EB" } },
-            alignment: { horizontal: "center" }
-        };
-
+        // Styling: Each structure type has a distinct dark background color for clear visual recognition
         const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
         for (let C = range.s.c; C <= range.e.c; ++C) {
             const cellAddress = XLSX.utils.encode_cell({ r: 0, c: C });
             if (ws[cellAddress]) {
-                ws[cellAddress].s = headerStyle;
+                const headerText = String(ws[cellAddress].v || '');
+                const bg = getHeaderBgColor(headerText);
+                ws[cellAddress].s = {
+                    font: { bold: true, color: { rgb: "FFFFFF" } },
+                    fill: { fgColor: { rgb: bg } },
+                    alignment: { horizontal: "center" }
+                };
             }
         }
 
-        ws['!cols'] = [{ wch: 35 }, { wch: 35 }];
+        const colCount = Math.max(headers.length, 2);
+        ws['!cols'] = Array(colCount).fill({ wch: 32 });
 
-        XLSX.utils.book_append_sheet(wb, ws, "Structure Template");
-        XLSX.writeFile(wb, `Planday_Structure_Template.xlsx`);
+        const mainSheetName = appMode === 'delete' ? "Items to Delete" : appMode === 'update' ? "Planday Update" : "Structure Template";
+        XLSX.utils.book_append_sheet(wb, ws, mainSheetName);
+
+        // Include "Reference Data" sheet reflecting current selections
+        const refWs = buildReferenceDataSheet();
+        XLSX.utils.book_append_sheet(wb, refWs, "Reference Data");
+
+        const fileName = appMode === 'delete'
+            ? `Planday_Delete_Template.xlsx`
+            : appMode === 'update'
+                ? `Planday_Update_Template.xlsx`
+                : `Planday_Structure_Template.xlsx`;
+        XLSX.writeFile(wb, fileName);
     };
 
     // Step 2: File Upload Parsing
@@ -646,7 +1287,8 @@ export default function App() {
             try {
                 const bstr = evt.target?.result;
                 const wb = XLSX.read(bstr, { type: 'binary' });
-                const wsname = wb.SheetNames[0];
+                // Prefer data sheet if workbook contains "Reference Data"
+                const wsname = wb.SheetNames.find(n => n.toLowerCase() !== 'reference data') || wb.SheetNames[0];
                 const ws = wb.Sheets[wsname];
 
                 const rawJson: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 });
@@ -692,37 +1334,94 @@ export default function App() {
         const existingGroupNames = new Set(currentStructure.employeeGroups.map(g => g.name.trim().toLowerCase()));
         const existingSkillNames = new Set(currentStructure.skills.map(s => s.name.trim().toLowerCase()));
 
-        const newDeptsMap = new Map<string, string | null>();
+        interface DeptImportData {
+            lookupName: string;
+            updateName?: string | null;
+            number?: string | null;
+            hasNumber: boolean;
+        }
+        interface SectionImportData {
+            name: string;
+            departmentName: string;
+            updateName?: string | null;
+            color?: string | null;
+        }
+
+        const newDeptsMap = new Map<string, DeptImportData>();
+        const newSectionsMap = new Map<string, SectionImportData>();
         const newGroupsMap = new Map<string, any>();
         const newSkillsMap = new Map<string, string>();
         const newPositionsList: any[] = [];
         const warnings: string[] = [];
         
-        if (importInputMethod === 'file') {
-            const dateKeys = [posValidFromColumn, posValidToColumn].filter(Boolean);
-            const isUSFormat = checkForUSDateFormat(parsedRows, dateKeys);
+        const dateKeys = [posValidFromColumn, posValidToColumn].filter(Boolean);
+        const isUSFormat = checkForUSDateFormat(parsedRows, dateKeys);
 
-            parsedRows.forEach((row, index) => {
+        parsedRows.forEach((row, index) => {
                 const rowNum = index + 2; // +1 for 0-index, +1 for header row
                 
                 // Department
                 const hasDeptName = !!(deptColumn && row[deptColumn]);
-                const hasDeptNum = !!(deptNumberColumn && row[deptNumberColumn]);
+                const hasDeptUpdateName = !!(deptUpdateNameColumn && row[deptUpdateNameColumn]);
+                const hasDeptNum = !!(deptNumberColumn && row[deptNumberColumn] !== undefined && row[deptNumberColumn] !== null && String(row[deptNumberColumn]).trim() !== '');
                 
-                if (hasDeptNum && !hasDeptName) {
-                    warnings.push(`Row ${rowNum}: Excluded Department creation. Missing required: 'Department Name'. Entered: [Dept Number: '${row[deptNumberColumn]}']`);
+                if (hasDeptNum && !hasDeptName && !hasDeptUpdateName) {
+                    warnings.push(`Row ${rowNum}: Excluded Department row. Missing Department Name identifier. Entered: [Dept Number: '${row[deptNumberColumn]}']`);
                 }
 
-                if (hasDeptName) {
-                    const val = String(row[deptColumn]).trim();
-                    let deptNum = null;
-                    if (hasDeptNum) {
-                        deptNum = String(row[deptNumberColumn]).trim();
+                const rawVal = hasDeptName ? String(row[deptColumn]).trim() : '';
+                const updateNameVal = hasDeptUpdateName ? String(row[deptUpdateNameColumn]).trim() : null;
+                let deptNum: string | null = null;
+                if (hasDeptNum) {
+                    deptNum = String(row[deptNumberColumn]).trim();
+                }
+
+                if (rawVal) {
+                    const key = rawVal.toLowerCase();
+                    const existingEntry = newDeptsMap.get(key) || {
+                        lookupName: rawVal,
+                        updateName: null,
+                        number: null,
+                        hasNumber: false
+                    };
+                    if (updateNameVal) {
+                        existingEntry.updateName = updateNameVal;
                     }
-                    if (val) {
-                        if (!newDeptsMap.has(val) || deptNum) {
-                            newDeptsMap.set(val, deptNum);
-                        }
+                    if (hasDeptNum) {
+                        existingEntry.number = deptNum;
+                        existingEntry.hasNumber = true;
+                    }
+                    newDeptsMap.set(key, existingEntry);
+                }
+
+                // Section
+                const hasSecName = !!(sectionNameColumn && row[sectionNameColumn]);
+                const hasSecDept = !!(sectionDeptColumn && row[sectionDeptColumn]);
+                const hasSecColor = !!(sectionColorColumn && row[sectionColorColumn]);
+                const hasSecUpdateName = !!(sectionUpdateNameColumn && row[sectionUpdateNameColumn]);
+
+                if ((hasSecColor || hasSecUpdateName) && (!hasSecName || !hasSecDept)) {
+                    const entered = [];
+                    if (hasSecName) entered.push(`Section Name: '${row[sectionNameColumn]}'`);
+                    if (hasSecDept) entered.push(`Department: '${row[sectionDeptColumn]}'`);
+                    if (hasSecColor) entered.push(`Color: '${row[sectionColorColumn]}'`);
+                    if (hasSecUpdateName) entered.push(`Update Name: '${row[sectionUpdateNameColumn]}'`);
+                    warnings.push(`Row ${rowNum}: Excluded Section row. Missing required: ${!hasSecName ? "'Section Name' " : ""}${!hasSecDept ? "'Section Department'" : ""}. Entered: [${entered.join(', ')}]`);
+                }
+
+                if (hasSecName && hasSecDept) {
+                    const sName = String(row[sectionNameColumn]).trim();
+                    const dName = String(row[sectionDeptColumn]).trim();
+                    const cVal = hasSecColor ? String(row[sectionColorColumn]).trim() : null;
+                    const uName = hasSecUpdateName ? String(row[sectionUpdateNameColumn]).trim() : null;
+                    if (sName && dName) {
+                        const key = `${dName.toLowerCase()}:::${sName.toLowerCase()}`;
+                        newSectionsMap.set(key, {
+                            name: sName,
+                            departmentName: dName,
+                            color: cVal,
+                            updateName: uName
+                        });
                     }
                 }
                 
@@ -822,35 +1521,50 @@ export default function App() {
                     }
                 }
             });
-        } else if (importInputMethod === 'text') {
-            const dNames = importDeptText.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
-            const gNames = importGroupText.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
-            dNames.forEach(val => {
-                if (!newDeptsMap.has(val)) newDeptsMap.set(val, null);
-            });
-            gNames.forEach(val => {
-                if (!newGroupsMap.has(val)) newGroupsMap.set(val, {});
-            });
-        }
 
         const items: StructureReviewItem[] = [];
 
         // Departments from file
-        newDeptsMap.forEach((deptNum, name) => {
+        newDeptsMap.forEach((deptData) => {
+            const name = deptData.lookupName;
             const isDuplicate = existingDeptNames.has(name.toLowerCase());
             const existingDept = currentStructure.departments.find(d => d.name.trim().toLowerCase() === name.toLowerCase());
             
             if (appMode === 'update') {
                 if (existingDept) {
+                    const targetName = (deptData.updateName && deptData.updateName.trim()) 
+                        ? deptData.updateName.trim() 
+                        : existingDept.name;
+                    const targetNum = deptData.hasNumber 
+                        ? (deptData.number ? String(deptData.number).trim() : null)
+                        : (existingDept.number || null);
+
+                    const hasNameChange = targetName !== existingDept.name;
+                    const hasNumChange = targetNum !== (existingDept.number || null);
+
+                    let msg = 'Update scheduled';
+                    if (hasNameChange && hasNumChange) {
+                        msg = `Rename to '${targetName}' & update number to '${targetNum || 'None'}'`;
+                    } else if (hasNameChange) {
+                        msg = `Rename to '${targetName}'`;
+                    } else if (hasNumChange) {
+                        msg = `Update number to '${targetNum || 'None'}'`;
+                    } else {
+                        msg = 'Existing values match file';
+                    }
+
                     items.push({
                         id: existingDept.id,
                         type: 'department',
-                        name,
-                        number: deptNum,
+                        name: existingDept.name,
+                        number: existingDept.number || null,
                         action: 'update',
                         status: 'pending',
-                        updatePayload: { name, number: deptNum },
-                        resultMessage: 'Update scheduled'
+                        updatePayload: { 
+                            name: targetName, 
+                            number: targetNum 
+                        },
+                        resultMessage: msg
                     });
                 } else {
                     items.push({
@@ -862,22 +1576,34 @@ export default function App() {
                     });
                 }
             } else {
+                const targetName = deptData.updateName || name;
+                const targetNum = deptData.hasNumber ? deptData.number : null;
+
                 if (isDuplicate) {
-                    if (deptNum && existingDept && existingDept.number !== deptNum) {
+                    if (existingDept && (
+                        (targetNum !== null && existingDept.number !== targetNum) ||
+                        (deptData.updateName && deptData.updateName !== existingDept.name)
+                    )) {
                         items.push({
                             id: existingDept.id,
                             type: 'department',
-                            name,
-                            number: deptNum,
+                            name: existingDept.name,
+                            number: existingDept.number || null,
                             action: 'update',
                             status: 'pending',
-                            resultMessage: 'Updating number from file'
+                            updatePayload: {
+                                name: targetName,
+                                number: targetNum !== null ? targetNum : (existingDept.number || null)
+                            },
+                            resultMessage: deptData.updateName 
+                                ? `Updating name to '${targetName}' from file` 
+                                : 'Updating number from file'
                         });
                     } else {
                         items.push({
                             type: 'department',
                             name,
-                            number: deptNum,
+                            number: targetNum,
                             action: 'skip_duplicate',
                             status: 'skipped',
                             resultMessage: 'Already exists in Planday'
@@ -886,8 +1612,8 @@ export default function App() {
                 } else {
                     items.push({
                         type: 'department',
-                        name,
-                        number: deptNum,
+                        name: targetName,
+                        number: targetNum,
                         action: 'create',
                         status: 'pending'
                     });
@@ -961,7 +1687,143 @@ export default function App() {
                     });
                 }
             }
-        });        // Skills from file
+        });
+
+        // Sections from file
+        newSectionsMap.forEach((secData) => {
+            const matchedDept = currentStructure.departments.find(d => 
+                d.name.trim().toLowerCase() === secData.departmentName.toLowerCase() ||
+                String(d.id) === secData.departmentName
+            );
+            const deptBeingCreated = newDeptsMap.has(secData.departmentName.toLowerCase());
+
+            const existingSec = (currentStructure.sections || []).find(s => {
+                const matchesName = s.name.trim().toLowerCase() === secData.name.toLowerCase();
+                if (!matchesName) return false;
+                if (matchedDept && s.departmentId === matchedDept.id) return true;
+                return false;
+            });
+
+            const isDuplicate = !!existingSec;
+
+            if (appMode === 'update') {
+                if (existingSec && matchedDept) {
+                    const targetName = (secData.updateName && secData.updateName.trim()) 
+                        ? secData.updateName.trim() 
+                        : existingSec.name;
+                    const targetColor = secData.color !== null && secData.color !== undefined 
+                        ? secData.color 
+                        : (existingSec.color || null);
+                    const nameChanged = targetName !== existingSec.name;
+                    const colorChanged = targetColor !== (existingSec.color || null);
+
+                    let msg = 'Update scheduled';
+                    if (nameChanged && colorChanged) {
+                        msg = `Rename to '${targetName}' & update color to '${targetColor || 'None'}'`;
+                    } else if (nameChanged) {
+                        msg = `Rename to '${targetName}'`;
+                    } else if (colorChanged) {
+                        msg = `Update color to '${targetColor || 'None'}'`;
+                    } else {
+                        msg = 'Existing values match file';
+                    }
+
+                    items.push({
+                        id: existingSec.id,
+                        type: 'section',
+                        name: existingSec.name,
+                        action: 'update',
+                        status: 'pending',
+                        updatePayload: {
+                            departmentId: matchedDept.id,
+                            departmentName: matchedDept.name,
+                            name: targetName,
+                            color: targetColor
+                        },
+                        resultMessage: msg
+                    });
+                } else {
+                    items.push({
+                        type: 'section',
+                        name: secData.name,
+                        action: 'skip_duplicate',
+                        status: 'error',
+                        resultMessage: !matchedDept 
+                            ? `Department '${secData.departmentName}' not found in Planday` 
+                            : `Section '${secData.name}' not found in Department '${matchedDept ? matchedDept.name : ''}'`
+                    });
+                }
+            } else {
+                // Import mode
+                if (isDuplicate && existingSec && matchedDept) {
+                    const targetColor = secData.color !== null && secData.color !== undefined ? secData.color : (existingSec.color || null);
+                    const targetName = secData.updateName ? secData.updateName.trim() : existingSec.name;
+                    if ((targetColor !== null && targetColor !== (existingSec.color || null)) || (secData.updateName && targetName !== existingSec.name)) {
+                        items.push({
+                            id: existingSec.id,
+                            type: 'section',
+                            name: existingSec.name,
+                            action: 'update',
+                            status: 'pending',
+                            updatePayload: {
+                                departmentId: matchedDept.id,
+                                departmentName: matchedDept.name,
+                                name: targetName,
+                                color: targetColor
+                            },
+                            resultMessage: secData.updateName ? `Updating name to '${targetName}' from file` : 'Updating color from file'
+                        });
+                    } else {
+                        items.push({
+                            id: existingSec.id,
+                            type: 'section',
+                            name: secData.name,
+                            action: 'skip_duplicate',
+                            status: 'skipped',
+                            resultMessage: `Already exists in Department '${matchedDept.name}'`
+                        });
+                    }
+                } else {
+                    items.push({
+                        type: 'section',
+                        name: secData.updateName || secData.name,
+                        action: 'create',
+                        status: 'pending',
+                        updatePayload: {
+                            departmentName: matchedDept ? matchedDept.name : secData.departmentName,
+                            departmentId: matchedDept?.id,
+                            color: secData.color || null
+                        },
+                        resultMessage: !matchedDept && !deptBeingCreated 
+                            ? `Warning: Department '${secData.departmentName}' not found in Planday` 
+                            : undefined
+                    });
+                }
+            }
+        });
+
+        // Positions from file
+        newPositionsList.forEach(pos => {
+            if (appMode === 'update') {
+                 items.push({
+                    type: 'position',
+                    name: pos.name,
+                    action: 'skip_duplicate',
+                    status: 'error',
+                    resultMessage: 'Update for positions not supported'
+                });
+            } else {
+                items.push({
+                    type: 'position',
+                    name: pos.name,
+                    action: 'create',
+                    status: 'pending',
+                    updatePayload: pos
+                });
+            }
+        });
+
+        // Skills from file
         newSkillsMap.forEach((desc, name) => {
             const isDuplicate = existingSkillNames.has(name.toLowerCase());
             if (appMode === 'update') {
@@ -993,26 +1855,7 @@ export default function App() {
             }
         });
 
-        // Positions from file
-        newPositionsList.forEach(pos => {
-            if (appMode === 'update') {
-                 items.push({
-                    type: 'position',
-                    name: pos.name,
-                    action: 'skip_duplicate',
-                    status: 'error',
-                    resultMessage: 'Update for positions not supported'
-                });
-            } else {
-                items.push({
-                    type: 'position',
-                    name: pos.name,
-                    action: 'create',
-                    status: 'pending',
-                    updatePayload: pos
-                });
-            }
-        });
+        items.sort((a, b) => (TYPE_ORDER[a.type] || 99) - (TYPE_ORDER[b.type] || 99));
 
         setReviewItems(items);
         setValidationWarnings(warnings);
@@ -1020,54 +1863,221 @@ export default function App() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    // Process File/Text/Selection and Generate Review Items (Delete)
+    // Process File/Text/Selection and Generate Review Items (Delete / Update)
     const generateActionReviewList = () => {
         const items: StructureReviewItem[] = [];
         
         if (deleteInputMethod === 'selection') {
             currentStructure.departments.forEach(d => {
                 if (deleteSelectedDepts.has(d.id)) {
-                    items.push({ id: d.id, type: 'department', name: d.name, action: appMode === 'update' ? 'update' : 'delete', status: 'pending' });
+                    items.push({ 
+                        id: d.id, 
+                        type: 'department', 
+                        name: d.name, 
+                        number: d.number || null,
+                        action: appMode === 'update' ? 'update' : 'delete', 
+                        status: 'pending',
+                        updatePayload: appMode === 'update' ? { name: d.name, number: d.number || '' } : undefined,
+                        resultMessage: appMode === 'update' ? 'Update scheduled' : 'Scheduled for deletion'
+                    });
                 }
             });
             currentStructure.employeeGroups.forEach(g => {
                 if (deleteSelectedGroups.has(g.id)) {
-                    items.push({ id: g.id, type: 'employee_group', name: g.name, action: appMode === 'update' ? 'update' : 'delete', status: 'pending' });
+                    items.push({ 
+                        id: g.id, 
+                        type: 'employee_group', 
+                        name: g.name, 
+                        action: appMode === 'update' ? 'update' : 'delete', 
+                        status: 'pending',
+                        updatePayload: appMode === 'update' ? {} : undefined,
+                        resultMessage: appMode === 'update' ? 'Update scheduled' : 'Scheduled for deletion'
+                    });
                 }
             });
-        } else if (deleteInputMethod === 'text') {
-            const dNames = deleteDeptText.split(/[,;\n]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
-            const gNames = deleteGroupText.split(/[,;\n]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
-            
-            currentStructure.departments.forEach(d => {
-                if (dNames.includes(d.name.toLowerCase())) {
-                    items.push({ id: d.id, type: 'department', name: d.name, action: appMode === 'update' ? 'update' : 'delete', status: 'pending' });
+            (currentStructure.sections || []).forEach(s => {
+                if (deleteSelectedSections.has(s.id)) {
+                    const dept = currentStructure.departments.find(d => d.id === s.departmentId);
+                    items.push({ 
+                        id: s.id, 
+                        type: 'section', 
+                        name: s.name, 
+                        action: appMode === 'update' ? 'update' : 'delete', 
+                        status: 'pending',
+                        updatePayload: { 
+                            departmentId: s.departmentId, 
+                            departmentName: dept?.name || `Dept #${s.departmentId}`,
+                            name: s.name, 
+                            color: s.color || '' 
+                        },
+                        resultMessage: appMode === 'update' ? 'Update scheduled' : `Scheduled for deletion (Dept: ${dept?.name || s.departmentId})`
+                    });
                 }
             });
-            currentStructure.employeeGroups.forEach(g => {
-                if (gNames.includes(g.name.toLowerCase())) {
-                    items.push({ id: g.id, type: 'employee_group', name: g.name, action: appMode === 'update' ? 'update' : 'delete', status: 'pending' });
+            (currentStructure.positions || []).forEach(p => {
+                if (deleteSelectedPositions.has(p.id)) {
+                    const dept = currentStructure.departments.find(d => d.id === p.departmentId);
+                    const group = currentStructure.employeeGroups.find(g => g.id === p.employeeGroupId);
+                    items.push({ 
+                        id: p.id, 
+                        type: 'position', 
+                        name: p.name, 
+                        action: appMode === 'update' ? 'update' : 'delete', 
+                        status: 'pending',
+                        updatePayload: { 
+                            departmentId: p.departmentId, 
+                            departmentName: dept?.name || `Dept #${p.departmentId}`,
+                            employeeGroupId: p.employeeGroupId,
+                            employeeGroupName: group?.name || `Group #${p.employeeGroupId}`,
+                            name: p.name, 
+                            color: p.color || '',
+                            validFrom: p.validFrom || '',
+                            validTo: p.validTo || '',
+                            revenueUnitId: p.revenueUnitId,
+                            affectRevenue: p.affectRevenue !== undefined ? p.affectRevenue : true
+                        },
+                        resultMessage: appMode === 'update' ? 'Update scheduled' : `Scheduled for deletion (Dept: ${dept?.name || p.departmentId})`
+                    });
+                }
+            });
+            (currentStructure.skills || []).forEach(sk => {
+                if (deleteSelectedSkills.has(sk.id)) {
+                    items.push({ 
+                        id: sk.id, 
+                        type: 'skill', 
+                        name: sk.name, 
+                        action: appMode === 'update' ? 'update' : 'delete', 
+                        status: 'pending',
+                        updatePayload: { 
+                            name: sk.name, 
+                            description: sk.description || '' 
+                        },
+                        resultMessage: appMode === 'update' ? 'Update scheduled' : 'Scheduled for deletion'
+                    });
                 }
             });
         } else if (deleteInputMethod === 'file') {
             const dNames = new Set<string>();
             const gNames = new Set<string>();
+            const sEntries: { name: string; dept?: string }[] = [];
+
             parsedRows.forEach(row => {
                 if (deptColumn && row[deptColumn]) dNames.add(String(row[deptColumn]).trim().toLowerCase());
                 if (groupColumn && row[groupColumn]) gNames.add(String(row[groupColumn]).trim().toLowerCase());
+                if (sectionNameColumn && row[sectionNameColumn]) {
+                    const sName = String(row[sectionNameColumn]).trim();
+                    const dName = sectionDeptColumn && row[sectionDeptColumn] ? String(row[sectionDeptColumn]).trim() : '';
+                    if (sName) sEntries.push({ name: sName, dept: dName });
+                }
             });
             
+            const matchedDepts = new Set<string>();
             currentStructure.departments.forEach(d => {
                 if (dNames.has(d.name.toLowerCase())) {
-                    items.push({ id: d.id, type: 'department', name: d.name, action: appMode === 'update' ? 'update' : 'delete', status: 'pending' });
+                    matchedDepts.add(d.name.toLowerCase());
+                    items.push({ 
+                        id: d.id, 
+                        type: 'department', 
+                        name: d.name, 
+                        number: d.number || null,
+                        action: appMode === 'update' ? 'update' : 'delete', 
+                        status: 'pending',
+                        updatePayload: appMode === 'update' ? { name: d.name, number: d.number || '' } : undefined,
+                        resultMessage: appMode === 'update' ? 'Update scheduled' : 'Scheduled for deletion'
+                    });
                 }
             });
+            dNames.forEach(name => {
+                if (!matchedDepts.has(name)) {
+                    items.push({
+                        id: 0,
+                        type: 'department',
+                        name: name,
+                        action: 'skip_duplicate',
+                        status: 'skipped',
+                        resultMessage: 'Not found in Planday structure'
+                    });
+                }
+            });
+
+            const matchedGroups = new Set<string>();
             currentStructure.employeeGroups.forEach(g => {
                 if (gNames.has(g.name.toLowerCase())) {
-                    items.push({ id: g.id, type: 'employee_group', name: g.name, action: appMode === 'update' ? 'update' : 'delete', status: 'pending' });
+                    matchedGroups.add(g.name.toLowerCase());
+                    items.push({ 
+                        id: g.id, 
+                        type: 'employee_group', 
+                        name: g.name, 
+                        action: appMode === 'update' ? 'update' : 'delete', 
+                        status: 'pending',
+                        updatePayload: appMode === 'update' ? {} : undefined,
+                        resultMessage: appMode === 'update' ? 'Update scheduled' : 'Scheduled for deletion'
+                    });
                 }
             });
-        }        setReviewItems(items);
+            gNames.forEach(name => {
+                if (!matchedGroups.has(name)) {
+                    items.push({
+                        id: 0,
+                        type: 'employee_group',
+                        name: name,
+                        action: 'skip_duplicate',
+                        status: 'skipped',
+                        resultMessage: 'Not found in Planday structure'
+                    });
+                }
+            });
+
+            // Sections from file
+            const matchedSecKeys = new Set<string>();
+            sEntries.forEach(entry => {
+                const sNameLower = entry.name.toLowerCase();
+                const dNameLower = (entry.dept || '').toLowerCase();
+                const matched = (currentStructure.sections || []).filter(s => {
+                    if (s.name.trim().toLowerCase() !== sNameLower) return false;
+                    if (dNameLower) {
+                        const d = currentStructure.departments.find(dept => dept.id === s.departmentId);
+                        return d && (d.name.trim().toLowerCase() === dNameLower || String(d.id) === dNameLower);
+                    }
+                    return true;
+                });
+
+                if (matched.length > 0) {
+                    matched.forEach(s => {
+                        const key = `${s.departmentId}:::${s.id}`;
+                        if (!matchedSecKeys.has(key)) {
+                            matchedSecKeys.add(key);
+                            const dept = currentStructure.departments.find(d => d.id === s.departmentId);
+                            items.push({
+                                id: s.id,
+                                type: 'section',
+                                name: s.name,
+                                action: appMode === 'update' ? 'update' : 'delete',
+                                status: 'pending',
+                                updatePayload: {
+                                    departmentId: s.departmentId,
+                                    departmentName: dept?.name || `Dept #${s.departmentId}`,
+                                    name: s.name,
+                                    color: s.color || ''
+                                },
+                                resultMessage: appMode === 'update' ? 'Update scheduled' : `Scheduled for deletion (${dept?.name || s.departmentId})`
+                            });
+                        }
+                    });
+                } else {
+                    items.push({
+                        id: 0,
+                        type: 'section',
+                        name: entry.dept ? `${entry.dept}: ${entry.name}` : entry.name,
+                        action: 'skip_duplicate',
+                        status: 'skipped',
+                        resultMessage: 'Not found in Planday structure'
+                    });
+                }
+            });
+        }
+        items.sort((a, b) => (TYPE_ORDER[a.type] || 99) - (TYPE_ORDER[b.type] || 99));
+        setReviewItems(items);
         setStep(appMode === 'update' && deleteInputMethod !== 'file' ? 2 : 3); // Config or Review
         if (appMode !== 'update' || deleteInputMethod === 'file') {
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1078,6 +2088,35 @@ export default function App() {
     const handleAddCustomReviewItem = () => {
         if (!newItemName.trim()) return;
         const cleanName = newItemName.trim();
+
+        if (newItemType === 'section') {
+            const deptId = typeof newItemDeptId === 'number' ? newItemDeptId : (currentStructure.departments[0]?.id || 0);
+            const dept = currentStructure.departments.find(d => d.id === deptId);
+            const existingSec = (currentStructure.sections || []).find(s => 
+                s.name.trim().toLowerCase() === cleanName.toLowerCase() && s.departmentId === deptId
+            );
+            const isDup = !!existingSec;
+
+            setReviewItems(prev => [
+                ...prev,
+                {
+                    type: 'section',
+                    name: cleanName,
+                    action: isDup ? 'skip_duplicate' : 'create',
+                    status: isDup ? 'skipped' : 'pending',
+                    updatePayload: {
+                        departmentId: deptId,
+                        departmentName: dept?.name || `Dept #${deptId}`,
+                        color: newItemColor.trim() || null
+                    },
+                    resultMessage: isDup ? `Already exists in Department '${dept?.name || deptId}'` : undefined
+                }
+            ]);
+
+            setNewItemName('');
+            setNewItemColor('');
+            return;
+        }
 
         const existingSet = newItemType === 'department'
             ? new Set(currentStructure.departments.map(d => d.name.trim().toLowerCase()))
@@ -1101,14 +2140,35 @@ export default function App() {
 
     const handleUpdatePayloadChange = (id: number | undefined, field: string, value: any) => {
         setReviewItems(prev => prev.map(item => {
-            if (item.id === id && item.type === 'employee_group' && item.action === 'update') {
-                const currentPayload = item.updatePayload || {};
-                const newPayload = { ...currentPayload, [field]: value };
-                if (field === 'defaultWageType') {
-                    if (value === 'HourlyRate') newPayload.shiftRate = undefined;
-                    if (value === 'ShiftRate') newPayload.hourlyRate = undefined;
+            if (item.id === id && item.action === 'update') {
+                if (item.type === 'section') {
+                    const currentPayload = item.updatePayload || { name: item.name, color: '' };
+                    return { ...item, updatePayload: { ...currentPayload, [field]: value } };
                 }
-                return { ...item, updatePayload: newPayload };
+                if (item.type === 'employee_group') {
+                    const currentPayload = item.updatePayload || {};
+                    const newPayload = { ...currentPayload, [field]: value };
+                    if (field === 'defaultWageType') {
+                        if (value === 'HourlyRate') newPayload.shiftRate = undefined;
+                        if (value === 'ShiftRate') newPayload.hourlyRate = undefined;
+                    }
+                    return { ...item, updatePayload: newPayload };
+                }
+                if (item.type === 'department') {
+                    const currentPayload = item.updatePayload || { name: item.name, number: item.number || '' };
+                    const newPayload = { ...currentPayload, [field]: value };
+                    return { ...item, updatePayload: newPayload };
+                }
+                if (item.type === 'position') {
+                    const currentPayload = item.updatePayload || { name: item.name };
+                    const newPayload = { ...currentPayload, [field]: value };
+                    return { ...item, updatePayload: newPayload };
+                }
+                if (item.type === 'skill') {
+                    const currentPayload = item.updatePayload || { name: item.name, description: '' };
+                    const newPayload = { ...currentPayload, [field]: value };
+                    return { ...item, updatePayload: newPayload };
+                }
             }
             return item;
         }));
@@ -1136,6 +2196,12 @@ export default function App() {
         const updatedItems = [...activeItems];
 
         // 1. Process Deletions
+        const successfullyDeletedDeptIds = new Set<number>();
+        const successfullyDeletedGroupIds = new Set<number>();
+        const successfullyDeletedSectionIds = new Set<number>();
+        const successfullyDeletedPositionIds = new Set<number>();
+        const successfullyDeletedSkillIds = new Set<number>();
+
         for (let i = 0; i < updatedItems.length; i++) {
             const item = updatedItems[i];
             if (item.action === 'delete' && item.id) {
@@ -1145,14 +2211,35 @@ export default function App() {
                 setExecutionProgress({
                     current: processedCount,
                     total: totalOps,
-                    label: `Deleting ${item.type === 'department' ? 'Department' : 'Employee Group'} "${item.name}"...`
+                    label: `Deleting ${item.type === 'department' ? 'Department' : item.type === 'section' ? 'Section' : 'Employee Group'} "${item.name}"...`
                 });
 
                 try {
-                    if (item.type === 'department') {
+                    if (item.type === 'section') {
+                        let deptId = item.updatePayload?.departmentId;
+                        if (!deptId) {
+                            const sec = (currentStructure.sections || []).find(s => s.id === item.id);
+                            deptId = sec?.departmentId;
+                        }
+                        if (!deptId && item.updatePayload?.departmentName) {
+                            const d = currentStructure.departments.find(dept => dept.name.toLowerCase() === item.updatePayload.departmentName.toLowerCase());
+                            deptId = d?.id;
+                        }
+                        if (!deptId) throw new Error('Missing department ID for section deletion');
+                        await deleteSection(deptId, item.id);
+                        successfullyDeletedSectionIds.add(item.id);
+                    } else if (item.type === 'department') {
                         await deleteDepartment(item.id);
-                    } else {
+                        successfullyDeletedDeptIds.add(item.id);
+                    } else if (item.type === 'employee_group') {
                         await deleteEmployeeGroup(item.id);
+                        successfullyDeletedGroupIds.add(item.id);
+                    } else if (item.type === 'position') {
+                        await deletePosition(item.id);
+                        successfullyDeletedPositionIds.add(item.id);
+                    } else if (item.type === 'skill') {
+                        await deleteSkill(item.id);
+                        successfullyDeletedSkillIds.add(item.id);
                     }
                     item.status = 'success';
                     item.resultMessage = 'Deleted successfully';
@@ -1164,9 +2251,34 @@ export default function App() {
             }
         }
 
+        if (successfullyDeletedDeptIds.size > 0 || 
+            successfullyDeletedGroupIds.size > 0 || 
+            successfullyDeletedSectionIds.size > 0 || 
+            successfullyDeletedPositionIds.size > 0 || 
+            successfullyDeletedSkillIds.size > 0) {
+            setCurrentStructure(prev => ({
+                ...prev,
+                departments: prev.departments.filter(d => !successfullyDeletedDeptIds.has(d.id)),
+                employeeGroups: prev.employeeGroups.filter(g => !successfullyDeletedGroupIds.has(g.id)),
+                sections: (prev.sections || []).filter(s => !successfullyDeletedSectionIds.has(s.id)),
+                skills: prev.skills.filter(s => !successfullyDeletedSkillIds.has(s.id)),
+                positions: prev.positions
+                    .filter(p => !successfullyDeletedPositionIds.has(p.id))
+                    .map(p => ({
+                        ...p,
+                        skillIds: (p.skillIds || []).filter(id => !successfullyDeletedSkillIds.has(id))
+                    }))
+            }));
+            setDeleteSelectedDepts(prev => { const s = new Set(prev); successfullyDeletedDeptIds.forEach(id => s.delete(id)); return s; });
+            setDeleteSelectedGroups(prev => { const s = new Set(prev); successfullyDeletedGroupIds.forEach(id => s.delete(id)); return s; });
+            setDeleteSelectedSections(prev => { const s = new Set(prev); successfullyDeletedSectionIds.forEach(id => s.delete(id)); return s; });
+            setDeleteSelectedPositions(prev => { const s = new Set(prev); successfullyDeletedPositionIds.forEach(id => s.delete(id)); return s; });
+            setDeleteSelectedSkills(prev => { const s = new Set(prev); successfullyDeletedSkillIds.forEach(id => s.delete(id)); return s; });
+        }
+
         // 2. Process Creations
-        // Order: Departments -> Employee Groups -> Skills -> Positions
-        const creationOrder = ['department', 'employee_group', 'skill', 'position'];
+        // Order: Departments -> Employee Groups -> Sections -> Positions -> Skills
+        const creationOrder = ['department', 'employee_group', 'section', 'position', 'skill'];
         
         for (const type of creationOrder) {
             for (let i = 0; i < updatedItems.length; i++) {
@@ -1178,7 +2290,7 @@ export default function App() {
                     setExecutionProgress({
                         current: processedCount,
                         total: totalOps,
-                        label: `Creating ${item.type} "${item.name}"...`
+                        label: `Creating ${item.type === 'section' ? 'Section' : item.type} "${item.name}"...`
                     });
 
                     try {                    
@@ -1187,6 +2299,28 @@ export default function App() {
                             item.status = 'success';
                             item.createdId = created.id;
                             item.resultMessage = `Created (ID: ${created.id})`;
+                        } else if (item.type === 'section') {
+                            let deptId = item.updatePayload?.departmentId;
+                            if (!deptId && item.updatePayload?.departmentName) {
+                                const dName = item.updatePayload.departmentName.trim().toLowerCase();
+                                const existingDept = currentStructure.departments.find(d => d.name.trim().toLowerCase() === dName);
+                                if (existingDept) {
+                                    deptId = existingDept.id;
+                                } else {
+                                    const newlyCreated = updatedItems.find(it => it.type === 'department' && it.name.trim().toLowerCase() === dName && it.createdId);
+                                    if (newlyCreated && newlyCreated.createdId) {
+                                        deptId = newlyCreated.createdId;
+                                    }
+                                }
+                            }
+                            if (!deptId) {
+                                throw new Error(`Cannot create section without a valid Department (Department '${item.updatePayload?.departmentName || 'Unknown'}' not found)`);
+                            }
+                            const color = item.updatePayload?.color || null;
+                            const created = await createSection(deptId, item.name, color);
+                            item.status = 'success';
+                            item.createdId = created.id;
+                            item.resultMessage = `Created (ID: ${created.id}, Dept ID: ${deptId})`;
                         } else if (item.type === 'skill') {
                             const created = await createSkill(item.name, item.updatePayload?.description);
                             item.status = 'success';
@@ -1219,6 +2353,20 @@ export default function App() {
                                     validTo: posPayload.validTo,
                                     affectRevenue: posPayload.affectRevenue
                                 };
+
+                                // Map sectionId if provided
+                                if (posPayload.sectionName) {
+                                    const sNameLower = posPayload.sectionName.trim().toLowerCase();
+                                    const existingSec = (currentStructure.sections || []).find(s => s.name.trim().toLowerCase() === sNameLower && s.departmentId === deptMatch.id);
+                                    if (existingSec) {
+                                        apiPayload.sectionId = existingSec.id;
+                                    } else {
+                                        const newlyCreatedSec = updatedItems.find(it => it.type === 'section' && it.name.trim().toLowerCase() === sNameLower && it.createdId);
+                                        if (newlyCreatedSec && newlyCreatedSec.createdId) {
+                                            apiPayload.sectionId = newlyCreatedSec.createdId;
+                                        }
+                                    }
+                                }
 
                                 if (posPayload.skills) {
                                     const skillNames = posPayload.skills.split(',').map((s: string) => s.trim().toLowerCase());
@@ -1299,19 +2447,116 @@ export default function App() {
                 setExecutionProgress({
                     current: processedCount,
                     total: totalOps,
-                    label: `Updating ${item.type === 'department' ? 'Department' : 'Employee Group'} "${item.name}"...`
+                    label: `Updating ${item.type === 'department' ? 'Department' : item.type === 'section' ? 'Section' : item.type === 'position' ? 'Position' : item.type === 'skill' ? 'Skill' : 'Employee Group'} "${item.name}"...`
                 });
 
-                try {                    if (item.type === 'department') {
-                        const newName = item.updatePayload?.name !== undefined ? item.updatePayload.name : item.name;
-                        const newNum = item.updatePayload?.number !== undefined ? item.updatePayload.number : (item.number || null);
-                        if (newName !== item.name || newNum !== (item.number || null) || appMode === 'import') {
-                            await updateDepartment(item.id, newName, newNum);
+                try {
+                    if (item.type === 'section') {
+                        const existingSec = (currentStructure.sections || []).find(s => s.id === item.id);
+                        const originalName = existingSec?.name || item.name;
+                        const originalColor = existingSec?.color || null;
+                        let deptId = item.updatePayload?.departmentId || existingSec?.departmentId;
+                        if (!deptId && item.updatePayload?.departmentName) {
+                            const d = currentStructure.departments.find(dept => dept.name.toLowerCase() === item.updatePayload.departmentName.toLowerCase());
+                            if (d) deptId = d.id;
+                        }
+                        if (!deptId) throw new Error('Missing department ID for section update');
+
+                        const targetName = (item.updatePayload?.name !== undefined && item.updatePayload?.name !== null && String(item.updatePayload.name).trim() !== '') 
+                            ? String(item.updatePayload.name).trim() 
+                            : originalName;
+                        const targetColor = item.updatePayload?.color !== undefined
+                            ? (item.updatePayload.color ? String(item.updatePayload.color).trim() : null)
+                            : originalColor;
+
+                        const nameChanged = targetName !== originalName;
+                        const colorChanged = targetColor !== originalColor;
+
+                        if (nameChanged || colorChanged || appMode === 'update' || appMode === 'import') {
+                            await updateSection(deptId, item.id, targetName, targetColor);
                             item.status = 'success';
-                            item.resultMessage = 'Updated successfully';
+                            const changes: string[] = [];
+                            if (nameChanged) changes.push(`Name: '${originalName}' -> '${targetName}'`);
+                            if (colorChanged) changes.push(`Color: '${originalColor || 'None'}' -> '${targetColor || 'None'}'`);
+                            item.resultMessage = changes.length > 0 ? `Updated successfully (${changes.join(', ')})` : 'Updated successfully';
+                            if (existingSec) {
+                                existingSec.name = targetName;
+                                existingSec.color = targetColor;
+                            }
                         } else {
                             item.status = 'skipped';
-                            item.resultMessage = 'No updates configured';
+                            item.resultMessage = 'No changes detected (Name and Color already match Planday)';
+                        }
+                    } else if (item.type === 'department') {
+                        const existingDept = currentStructure.departments.find(d => d.id === item.id || d.name.trim().toLowerCase() === item.name.trim().toLowerCase());
+                        const originalName = existingDept?.name || item.name;
+                        const originalNum = existingDept?.number || item.number || null;
+
+                        const targetName = (item.updatePayload?.name !== undefined && item.updatePayload?.name !== null && String(item.updatePayload.name).trim() !== '') 
+                            ? String(item.updatePayload.name).trim() 
+                            : originalName;
+                        const targetNum = item.updatePayload?.number !== undefined 
+                            ? (item.updatePayload.number ? String(item.updatePayload.number).trim() : null) 
+                            : originalNum;
+
+                        const nameChanged = targetName !== originalName;
+                        const numChanged = targetNum !== originalNum;
+
+                        if (nameChanged || numChanged || (appMode === 'update' && (item.updatePayload?.name || item.updatePayload?.number !== undefined)) || appMode === 'import') {
+                            await updateDepartment(item.id, targetName, targetNum);
+                            item.status = 'success';
+                            const changes: string[] = [];
+                            if (nameChanged) changes.push(`Name: '${originalName}' -> '${targetName}'`);
+                            if (numChanged) changes.push(`Number: '${originalNum || 'None'}' -> '${targetNum || 'None'}'`);
+                            item.resultMessage = changes.length > 0 ? `Updated successfully (${changes.join(', ')})` : 'Updated successfully';
+                            if (existingDept) {
+                                existingDept.name = targetName;
+                                existingDept.number = targetNum;
+                            }
+                        } else {
+                            item.status = 'skipped';
+                            item.resultMessage = 'No changes detected (Name and Number already match Planday)';
+                        }
+                    } else if (item.type === 'position') {
+                        const existingPos = (currentStructure.positions || []).find(p => p.id === item.id);
+                        const originalName = existingPos?.name || item.name;
+                        const targetName = (item.updatePayload?.name !== undefined && String(item.updatePayload.name).trim() !== '') 
+                            ? String(item.updatePayload.name).trim() 
+                            : originalName;
+                        const targetColor = item.updatePayload?.color !== undefined ? item.updatePayload.color : (existingPos?.color || null);
+                        
+                        const updateBody: any = {
+                            name: targetName,
+                            departmentId: existingPos?.departmentId || item.updatePayload?.departmentId,
+                            employeeGroupId: existingPos?.employeeGroupId || item.updatePayload?.employeeGroupId,
+                            color: targetColor || null,
+                            validFrom: item.updatePayload?.validFrom || existingPos?.validFrom || null,
+                            validTo: item.updatePayload?.validTo || existingPos?.validTo || null,
+                            revenueUnitId: item.updatePayload?.revenueUnitId !== undefined ? item.updatePayload.revenueUnitId : (existingPos?.revenueUnitId || null),
+                            affectRevenue: item.updatePayload?.affectRevenue !== undefined ? item.updatePayload.affectRevenue : (existingPos?.affectRevenue !== undefined ? existingPos.affectRevenue : true)
+                        };
+                        await updatePosition(item.id, updateBody);
+                        item.status = 'success';
+                        const nameChanged = targetName !== originalName;
+                        item.resultMessage = nameChanged ? `Updated successfully (Name: '${originalName}' -> '${targetName}')` : 'Updated successfully';
+                        if (existingPos) {
+                            existingPos.name = targetName;
+                            existingPos.color = targetColor;
+                        }
+                    } else if (item.type === 'skill') {
+                        const existingSkill = (currentStructure.skills || []).find(s => s.id === item.id);
+                        const originalName = existingSkill?.name || item.name;
+                        const targetName = (item.updatePayload?.name !== undefined && String(item.updatePayload.name).trim() !== '')
+                            ? String(item.updatePayload.name).trim()
+                            : originalName;
+                        const targetDesc = item.updatePayload?.description !== undefined ? item.updatePayload.description : (existingSkill?.description || '');
+                        await updateSkill(item.id, targetName, targetDesc);
+                        item.status = 'success';
+                        const nameChanged = targetName !== originalName;
+                        item.resultMessage = nameChanged ? `Updated successfully (Name: '${originalName}' -> '${targetName}')` : 'Updated successfully';
+                        if (existingSkill) {
+                            existingSkill.name = targetName;
+                            existingSkill.description = targetDesc;
                         }
                     } else {
                         const payload = item.updatePayload;
@@ -1343,17 +2588,28 @@ export default function App() {
 
         // Refresh current Planday structure in memory
         try {
-            const [depts, groups, skills, revenueUnits] = await Promise.all([
+            const [depts, groups, skills, revUnits] = await Promise.all([
                 fetchDepartments(),
                 fetchEmployeeGroups(),
                 fetchSkills().catch(() => []),
                 fetchRevenueUnits().catch(() => [])
             ]);
-            setCurrentStructure({ departments: depts, employeeGroups: groups, skills, revenueUnits });
+            const positions = await fetchPositions(skills).catch(() => []);
+            const sections = await fetchAllSections(depts).catch(() => []);
+            setCurrentStructure({ departments: depts, employeeGroups: groups, skills, positions, sections, revenueUnits: revUnits });
         } catch { }
-    };    // Export execution report as Excel
+    };
+
+    // Export execution report as Excel
     const handleExportExecutionReport = () => {
-        const data = reviewItems.map(item => {
+        const sortedItems = [...reviewItems].sort((a, b) => {
+            const orderA = TYPE_ORDER[a.type] || 99;
+            const orderB = TYPE_ORDER[b.type] || 99;
+            if (orderA !== orderB) return orderA - orderB;
+            return a.name.localeCompare(b.name);
+        });
+
+        const data = sortedItems.map(item => {
             let actionLabel = 'Skip Duplicate';
             if (item.action === 'create') actionLabel = 'Create';
             else if (item.action === 'delete') actionLabel = 'Delete';
@@ -1361,8 +2617,9 @@ export default function App() {
 
             const typeLabel = item.type === 'department' ? 'Department' :
                               item.type === 'employee_group' ? 'Employee Group' :
-                              item.type === 'skill' ? 'Skill' :
-                              item.type === 'position' ? 'Position' : 'Unknown';
+                              item.type === 'section' ? 'Section' :
+                              item.type === 'position' ? 'Position' :
+                              item.type === 'skill' ? 'Skill' : 'Unknown';
 
             const row: any = {
                 "Type": typeLabel,
@@ -1374,6 +2631,9 @@ export default function App() {
             };
 
             if (item.type === 'department') {
+                if (item.updatePayload?.name && item.updatePayload.name !== item.name) {
+                    row["Updated Name"] = item.updatePayload.name;
+                }
                 row["Number"] = item.updatePayload?.number !== undefined ? item.updatePayload.number : (item.number || "");
             }
 
@@ -1384,8 +2644,12 @@ export default function App() {
                 row["Salary Code 2"] = item.updatePayload?.salaryCode2 || "";
             }
 
-            if (item.type === 'skill') {
-                row["Description"] = item.updatePayload?.description || "";
+            if (item.type === 'section') {
+                row["Department"] = item.updatePayload?.departmentName || "";
+                row["Color"] = item.updatePayload?.color || "";
+                if (item.updatePayload?.name && item.updatePayload.name !== item.name) {
+                    row["Updated Name"] = item.updatePayload.name;
+                }
             }
 
             if (item.type === 'position') {
@@ -1393,6 +2657,10 @@ export default function App() {
                 row["Employee Group Name"] = item.updatePayload?.employeeGroupName || "";
                 row["Skills"] = item.updatePayload?.skills || "";
                 row["Revenue Unit"] = item.updatePayload?.revenueUnitName || "";
+            }
+
+            if (item.type === 'skill') {
+                row["Description"] = item.updatePayload?.description || "";
             }
 
             return row;
@@ -1405,76 +2673,158 @@ export default function App() {
 
     // Filter review items for table
     const filteredReviewItems = useMemo(() => {
-        return reviewItems.filter(item => {
-            if (reviewTab === 'create' && item.action !== 'create') return false;
-            if (reviewTab === 'skip' && item.action !== 'skip_duplicate') return false;
-            if (reviewTab === 'delete' && item.action !== 'delete') return false;
-            if (reviewTab === 'update' && item.action !== 'update') return false;
+        return reviewItems
+            .filter(item => {
+                if (reviewTab === 'create' && item.action !== 'create') return false;
+                if (reviewTab === 'skip' && item.action !== 'skip_duplicate') return false;
+                if (reviewTab === 'delete' && item.action !== 'delete') return false;
+                if (reviewTab === 'update' && item.action !== 'update') return false;
 
-            if (reviewSearch) {
-                const lower = reviewSearch.toLowerCase();
-                return item.name.toLowerCase().includes(lower) || item.type.toLowerCase().includes(lower);
-            }
-            return true;
-        });
+                if (reviewSearch) {
+                    const lower = reviewSearch.toLowerCase();
+                    return item.name.toLowerCase().includes(lower) || item.type.toLowerCase().includes(lower);
+                }
+                return true;
+            })
+            .sort((a, b) => {
+                const orderA = TYPE_ORDER[a.type] || 99;
+                const orderB = TYPE_ORDER[b.type] || 99;
+                if (orderA !== orderB) return orderA - orderB;
+                return a.name.localeCompare(b.name);
+            });
     }, [reviewItems, reviewTab, reviewSearch]);
 
     // Review counts
     const reviewStats = useMemo(() => {
         const toCreateDept = reviewItems.filter(i => i.type === 'department' && i.action === 'create').length;
         const toCreateGroup = reviewItems.filter(i => i.type === 'employee_group' && i.action === 'create').length;
-        const toCreateSkill = reviewItems.filter(i => i.type === 'skill' && i.action === 'create').length;
+        const toCreateSection = reviewItems.filter(i => i.type === 'section' && i.action === 'create').length;
         const toCreatePosition = reviewItems.filter(i => i.type === 'position' && i.action === 'create').length;
+        const toCreateSkill = reviewItems.filter(i => i.type === 'skill' && i.action === 'create').length;
+
+        const toUpdateDept = reviewItems.filter(i => i.type === 'department' && i.action === 'update').length;
+        const toUpdateGroup = reviewItems.filter(i => i.type === 'employee_group' && i.action === 'update').length;
+        const toUpdateSection = reviewItems.filter(i => i.type === 'section' && i.action === 'update').length;
+        const toUpdatePosition = reviewItems.filter(i => i.type === 'position' && i.action === 'update').length;
+        const toUpdateSkill = reviewItems.filter(i => i.type === 'skill' && i.action === 'update').length;
+
+        const toDeleteDept = reviewItems.filter(i => i.type === 'department' && i.action === 'delete').length;
+        const toDeleteGroup = reviewItems.filter(i => i.type === 'employee_group' && i.action === 'delete').length;
+        const toDeleteSection = reviewItems.filter(i => i.type === 'section' && i.action === 'delete').length;
+        const toDeletePosition = reviewItems.filter(i => i.type === 'position' && i.action === 'delete').length;
+        const toDeleteSkill = reviewItems.filter(i => i.type === 'skill' && i.action === 'delete').length;
+
         const skipped = reviewItems.filter(i => i.action === 'skip_duplicate').length;
         const toDelete = reviewItems.filter(i => i.action === 'delete').length;
         const toUpdate = reviewItems.filter(i => i.action === 'update').length;
-        return { toCreateDept, toCreateGroup, toCreateSkill, toCreatePosition, skipped, toDelete, toUpdate };
+        const toCreate = toCreateDept + toCreateGroup + toCreateSection + toCreatePosition + toCreateSkill;
+
+        return { 
+            toCreateDept, toCreateGroup, toCreateSection, toCreatePosition, toCreateSkill, toCreate,
+            toUpdateDept, toUpdateGroup, toUpdateSection, toUpdatePosition, toUpdateSkill, toUpdate,
+            toDeleteDept, toDeleteGroup, toDeleteSection, toDeletePosition, toDeleteSkill, toDelete,
+            skipped 
+        };
     }, [reviewItems]);
+
+    // Overview pending action tiles based on active flow (New for import, Update for updates, Delete for deletions)
+    const overviewTiles = useMemo(() => {
+        if (appMode === 'delete') {
+            return [
+                { label: 'Delete Departments', count: reviewStats.toDeleteDept, color: 'text-blue-600' },
+                { label: 'Delete Employee Groups', count: reviewStats.toDeleteGroup, color: 'text-purple-600' },
+                { label: 'Delete Sections', count: reviewStats.toDeleteSection, color: 'text-gray-700' },
+                { label: 'Delete Positions', count: reviewStats.toDeletePosition, color: 'text-teal-600' },
+                { label: 'Delete Skills', count: reviewStats.toDeleteSkill, color: 'text-yellow-700' },
+                { label: 'Skipped', count: reviewStats.skipped, color: 'text-amber-600' },
+            ];
+        }
+        if (appMode === 'update') {
+            return [
+                { label: 'Update Departments', count: reviewStats.toUpdateDept, color: 'text-blue-600' },
+                { label: 'Update Employee Groups', count: reviewStats.toUpdateGroup, color: 'text-purple-600' },
+                { label: 'Update Sections', count: reviewStats.toUpdateSection, color: 'text-gray-700' },
+                { label: 'Update Positions', count: reviewStats.toUpdatePosition, color: 'text-teal-600' },
+                { label: 'Update Skills', count: reviewStats.toUpdateSkill, color: 'text-yellow-700' },
+                { label: 'Skipped', count: reviewStats.skipped, color: 'text-amber-600' },
+            ];
+        }
+        // appMode === 'import'
+        const tiles = [
+            { label: 'New Departments', count: reviewStats.toCreateDept, color: 'text-blue-600' },
+            { label: 'New Employee Groups', count: reviewStats.toCreateGroup, color: 'text-purple-600' },
+            { label: 'New Sections', count: reviewStats.toCreateSection, color: 'text-gray-700' },
+            { label: 'New Positions', count: reviewStats.toCreatePosition, color: 'text-teal-600' },
+            { label: 'New Skills', count: reviewStats.toCreateSkill, color: 'text-yellow-700' },
+            { label: 'Duplicates Skipped', count: reviewStats.skipped, color: 'text-amber-600' },
+        ];
+        if (reviewStats.toUpdate > 0) {
+            tiles.push({ label: 'Items To Update', count: reviewStats.toUpdate, color: 'text-amber-600' });
+        }
+        if (reviewStats.toDelete > 0) {
+            tiles.push({ label: 'Items To Delete', count: reviewStats.toDelete, color: 'text-red-600' });
+        }
+        return tiles;
+    }, [appMode, reviewStats]);
+
+    // Current Structure Preview filtered items by department
+    const filteredPreviewSections = useMemo(() => {
+        if (!previewSectionDeptId) return [];
+        if (previewSectionDeptId === 'all') return currentStructure.sections || [];
+        const targetDeptId = Number(previewSectionDeptId);
+        return (currentStructure.sections || []).filter(s => Number(s.departmentId) === targetDeptId);
+    }, [currentStructure.sections, previewSectionDeptId]);
+
+    const filteredPreviewPositions = useMemo(() => {
+        if (!previewPositionDeptId) return [];
+        if (previewPositionDeptId === 'all') return currentStructure.positions || [];
+        const targetDeptId = Number(previewPositionDeptId);
+        return (currentStructure.positions || []).filter(p => {
+            if (p.departmentId !== undefined && p.departmentId !== null) {
+                return Number(p.departmentId) === targetDeptId;
+            }
+            if (Array.isArray((p as any).departmentIds) && (p as any).departmentIds.length > 0) {
+                return (p as any).departmentIds.some((id: any) => Number(id) === targetDeptId);
+            }
+            if (p.sectionId && currentStructure.sections) {
+                const sec = currentStructure.sections.find(s => s.id === p.sectionId);
+                if (sec && Number(sec.departmentId) === targetDeptId) {
+                    return true;
+                }
+            }
+            return false;
+        });
+    }, [currentStructure.positions, currentStructure.sections, previewPositionDeptId]);
 
     // Steps configuration
     const importStepsList = [
         { title: "Authenticate", subtitle: "Connect Planday API" },
-        { title: "Template & Upload", subtitle: "Export or Import Excel" },
-        { title: "Field Mapping", subtitle: "Select Columns" },
-        { title: "Review & Check", subtitle: "Deduplicate & Confirm" },
-        { title: "Import Structure", subtitle: "Execute API Creation" },
+        { title: "Make Selections", subtitle: "Choose what to Import" },
+        { title: "Configure", subtitle: "Map/Input data" },
+        { title: "Review", subtitle: "Confirm Import" },
+        { title: "Execute", subtitle: "Bulk Import" },
     ];
 
     const deleteStepsList = [
         { title: "Authenticate", subtitle: "Connect Planday API" },
-        { title: "Select Items", subtitle: "Choose what to delete" },
-        { title: "Mapping / Review", subtitle: "Confirm items" },
-        { title: "Review & Check", subtitle: "Final review" },
-        { title: "Execute", subtitle: "API Deletion" },
+        { title: "Make Selections", subtitle: "Choose what to Delete" },
+        { title: "Configure", subtitle: "Map/Input data" },
+        { title: "Review", subtitle: "Confirm Deletions" },
+        { title: "Execute", subtitle: "Bulk Delete" },
     ];
 
     const updateStepsList = [
         { title: "Authenticate", subtitle: "Connect Planday API" },
-        { title: "Select Items", subtitle: "Choose what to update" },
-        { title: "Configure", subtitle: "Make selections" },
-        { title: "Review", subtitle: "Confirm updates" },
-        { title: "Execute", subtitle: "API Update" },
+        { title: "Make Selections", subtitle: "Choose what to Update" },
+        { title: "Configure", subtitle: "Map/Input data" },
+        { title: "Review", subtitle: "Confirm Updates" },
+        { title: "Execute", subtitle: "Bulk Update" },
     ];
 
     const stepsList = appMode === 'import' ? importStepsList : appMode === 'update' ? updateStepsList : deleteStepsList;
 
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900">
-            {/* Top Navigation / Header */}
-            <header className="bg-white border-b border-gray-200 sticky top-0 z-30 shadow-sm">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-blue-600 text-white p-2 rounded-xl shadow-md">
-                            <BuildingOfficeIcon className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <span className="font-extrabold text-xl text-gray-900 tracking-tight">Planday Structure Builder</span>
-                            <span className="ml-2 bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded-full uppercase">BETA</span>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
             {/* Main Content */}
             <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col gap-8">
                 <PageHeader />
@@ -1489,13 +2839,13 @@ export default function App() {
                                 Import
                             </button>
                             <button
-                                onClick={() => { setAppMode('update'); setStep(1); }}
+                                onClick={() => { setAppMode('update'); setStep(1); setDeleteInputMethod('file'); }}
                                 className={`px-6 py-2 rounded-lg text-sm font-bold transition-colors ${appMode === 'update' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                             >
                                 Update
                             </button>
                             <button
-                                onClick={() => { setAppMode('delete'); setStep(1); }}
+                                onClick={() => { setAppMode('delete'); setStep(1); setDeleteInputMethod('file'); }}
                                 className={`px-6 py-2 rounded-lg text-sm font-bold transition-colors ${appMode === 'delete' ? 'bg-red-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                             >
                                 Delete
@@ -1505,7 +2855,7 @@ export default function App() {
                 )}
 
                 {/* Progress Stepper Bar */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+                <div className="w-full py-2">
                     <Stepper current={step} steps={stepsList} onStepClick={(s) => setStep(s)} />
                 </div>
 
@@ -1538,9 +2888,16 @@ export default function App() {
                         {/* Logout Button */}
                         <button 
                             onClick={handleChangeCredentials} 
-                            className="text-gray-600 hover:text-red-700 underline transition-colors"
+                            disabled={isDisconnecting}
+                            className="text-gray-600 hover:text-red-700 underline transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
                         >
-                            Change credentials (log out)
+                            {isDisconnecting && (
+                                <svg className="animate-spin h-3.5 w-3.5 text-red-600" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            )}
+                            {isDisconnecting ? 'Disconnecting...' : 'Change credentials (log out)'}
                         </button>
                     </div>
                 )}
@@ -1653,54 +3010,58 @@ export default function App() {
                 {step === 1 && appMode === 'import' && (
                     <div className="space-y-8">
                         {/* Current Structure Overview Banner */}
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 grid sm:grid-cols-3 gap-6">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
                             <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-center gap-4">
                                 <div className="p-3 bg-blue-600 text-white rounded-lg">
                                     <BuildingOfficeIcon className="w-6 h-6" />
                                 </div>
                                 <div>
                                     <span className="block text-2xl font-extrabold text-blue-900">{currentStructure.departments.length}</span>
-                                    <span className="text-xs font-semibold text-blue-700 uppercase tracking-wider">Current Departments</span>
+                                    <span className="text-xs font-semibold text-blue-700 uppercase tracking-wider">Departments</span>
                                 </div>
                             </div>
 
-                            <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex items-center gap-4">
-                                <div className="p-3 bg-indigo-600 text-white rounded-lg">
+                            <div className="bg-purple-50 p-4 rounded-xl border border-purple-200 flex items-center gap-4">
+                                <div className="p-3 bg-purple-600 text-white rounded-lg">
                                     <UserGroupIcon className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <span className="block text-2xl font-extrabold text-indigo-900">{currentStructure.employeeGroups.length}</span>
-                                    <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wider">Current Employee Groups</span>
+                                    <span className="block text-2xl font-extrabold text-purple-900">{currentStructure.employeeGroups.length}</span>
+                                    <span className="text-xs font-semibold text-purple-700 uppercase tracking-wider">Empl. Groups</span>
                                 </div>
                             </div>
 
-                            <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 flex items-center gap-4">
-                                <div className="p-3 bg-emerald-600 text-white rounded-lg">
+                            <div className="bg-gray-100 p-4 rounded-xl border border-gray-300 flex items-center gap-4">
+                                <div className="p-3 bg-gray-700 text-white rounded-lg">
+                                    <SectionIcon className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <span className="block text-2xl font-extrabold text-gray-900">{currentStructure.sections?.length || 0}</span>
+                                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Sections</span>
+                                </div>
+                            </div>
+
+                            <div className="bg-teal-50 p-4 rounded-xl border border-teal-200 flex items-center gap-4">
+                                <div className="p-3 bg-teal-600 text-white rounded-lg">
+                                    <BriefcaseIcon className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <span className="block text-2xl font-extrabold text-teal-900">{currentStructure.positions?.length || 0}</span>
+                                    <span className="text-xs font-semibold text-teal-700 uppercase tracking-wider">Positions</span>
+                                </div>
+                            </div>
+
+                            <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200 flex items-center gap-4">
+                                <div className="p-3 bg-yellow-600 text-white rounded-lg">
                                     <StarIcon className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <span className="block text-2xl font-extrabold text-emerald-900">{currentStructure.skills.length}</span>
-                                    <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">Current Skills</span>
+                                    <span className="block text-2xl font-extrabold text-yellow-900">{currentStructure.skills?.length || 0}</span>
+                                    <span className="text-xs font-semibold text-yellow-800 uppercase tracking-wider">Skills</span>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Import Method Toggle */}
-                        <div className="flex justify-center my-2">
-                            <div className="inline-flex bg-gray-100 p-1 rounded-xl">
-                                {['file', 'text'].map(method => (
-                                    <button 
-                                        key={method}
-                                        onClick={() => setImportInputMethod(method as any)}
-                                        className={`px-8 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${importInputMethod === method ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                                    >
-                                        {method === 'file' ? 'Upload File' : 'Paste Names'}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {importInputMethod === 'file' && (
                         <div className="grid md:grid-cols-2 gap-8">
                             {/* Panel A: Template Generator / Structure Export */}
                             <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-between">
@@ -1725,23 +3086,24 @@ export default function App() {
                                                 onChange={(e) => setIncludeDepartments(e.target.checked)}
                                                 className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                                             />
-                                            <span>Departments (Column A)</span>
+                                            <span>Departments</span>
                                         </label>
                                         <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800">
                                             <input 
                                                 type="checkbox" 
                                                 checked={includeEmployeeGroups} 
                                                 onChange={(e) => setIncludeEmployeeGroups(e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
                                             />
                                             <span>Employee Groups</span>
                                         </label>
-                                        {includeEmployeeGroups && (                                            <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800 ml-7">
+                                        {includeEmployeeGroups && (
+                                            <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800 ml-7">
                                                 <input 
                                                     type="checkbox" 
                                                     checked={includeWageColumns} 
                                                     onChange={(e) => setIncludeWageColumns(e.target.checked)}
-                                                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                    className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
                                                 />
                                                 <span>Include Default Wage Data columns</span>
                                             </label>
@@ -1749,29 +3111,29 @@ export default function App() {
                                         <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800">
                                             <input 
                                                 type="checkbox" 
-                                                checked={includeSkills} 
-                                                onChange={(e) => setIncludeSkills(e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                                            />
-                                            <span>Skills</span>
-                                        </label>
-                                        <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800">
-                                            <input 
-                                                type="checkbox" 
                                                 checked={includeSections} 
                                                 onChange={(e) => setIncludeSections(e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                className="w-4 h-4 text-gray-700 rounded focus:ring-gray-500"
                                             />
-                                            <span>Sections (Coming soon)</span>
+                                            <span>Sections</span>
                                         </label>
                                         <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800">
                                             <input 
                                                 type="checkbox" 
                                                 checked={includePositions} 
                                                 onChange={(e) => setIncludePositions(e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                className="w-4 h-4 text-teal-600 rounded focus:ring-teal-500"
                                             />
                                             <span>Positions</span>
+                                        </label>
+                                        <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={includeSkills} 
+                                                onChange={(e) => setIncludeSkills(e.target.checked)}
+                                                className="w-4 h-4 text-yellow-600 rounded focus:ring-yellow-500"
+                                            />
+                                            <span>Skills</span>
                                         </label>
                                     </div>
                                 </div>
@@ -1779,7 +3141,7 @@ export default function App() {
                                 <div className="space-y-3 mt-4">
                                     <button 
                                         onClick={populateWithCurrent ? handleDownloadCurrentStructure : handleDownloadBlankTemplate}
-                                        disabled={!includeDepartments && !includeEmployeeGroups && !includeSkills}
+                                        disabled={!includeDepartments && !includeSections && !includeEmployeeGroups && !includeSkills && !includePositions}
                                         className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
                                     >
                                         <DownloadIcon className="w-4 h-4" />
@@ -1832,111 +3194,212 @@ export default function App() {
                                 </div>
                             </div>
                         </div>
-                        )}
-
-                        {importInputMethod === 'text' && (
-                            /* Text Input for Paste Names */
-                            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 space-y-6">
-                                <div>
-                                    <h3 className="text-xl font-bold text-gray-900 mb-1">Paste Names</h3>
-                                    <p className="text-sm text-gray-600">Provide the new departments or groups you wish to create (comma, semicolon, or newline separated).</p>
-                                </div>
-                                <div className="grid md:grid-cols-2 gap-8">
-                                    <div>
-                                        <label className="block text-sm font-bold text-gray-700 mb-2">Departments</label>
-                                        <textarea 
-                                            value={importDeptText}
-                                            onChange={e => setImportDeptText(e.target.value)}
-                                            className="w-full h-40 px-4 py-3 border border-gray-200 rounded-xl"
-                                            placeholder="Sales, Marketing; IT&#10;Finance"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-bold text-gray-700 mb-2">Employee Groups</label>
-                                        <textarea 
-                                            value={importGroupText}
-                                            onChange={e => setImportGroupText(e.target.value)}
-                                            className="w-full h-40 px-4 py-3 border border-gray-200 rounded-xl"
-                                            placeholder="Manager, Associate; Admin&#10;Intern"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="flex justify-end pt-4">
-                                    <button 
-                                        onClick={generateReviewList}
-                                        disabled={!importDeptText.trim() && !importGroupText.trim()}
-                                        className="py-3 px-8 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
-                                    >
-                                        <span>Continue to Review</span>
-                                        <ArrowRightIcon className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        )}
 
                         {/* Collapsible View of Current Structure */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
                             <h4 className="text-md font-bold text-gray-900 mb-4 flex items-center gap-2">
                                 <span>📋</span> Current Structure Preview
                             </h4>
-                            <div className="grid md:grid-cols-3 gap-6 text-sm">
-                                {/* Departments List */}
-                                <div className="border border-gray-200 rounded-xl overflow-hidden">
-                                    <div className="bg-gray-50 px-4 py-2.5 font-bold text-gray-800 border-b border-gray-200 flex justify-between items-center">
-                                        <span>Departments</span>
-                                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">{currentStructure.departments.length}</span>
+                            <div className="space-y-6 text-sm">
+                                {/* Row 1: Departments and Employee Groups */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* Departments List */}
+                                    <div className="border border-gray-200 rounded-xl overflow-hidden">
+                                        <div className="bg-gray-50 px-4 py-2.5 font-bold text-gray-800 border-b border-gray-200 flex justify-between items-center">
+                                            <span>Departments</span>
+                                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">{currentStructure.departments.length}</span>
+                                        </div>
+                                        <div className="max-h-48 overflow-y-auto p-3 space-y-1 bg-white">
+                                            {currentStructure.departments.length > 0 ? (
+                                                currentStructure.departments.map(d => (
+                                                    <div key={d.id} className="py-1 px-2 hover:bg-gray-50 rounded text-gray-700 text-xs flex justify-between">
+                                                        <span>{d.name}</span>
+                                                        <span className="text-gray-400">ID: {d.id}</span>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <span className="text-xs text-gray-400 italic">No departments currently in Planday</span>
+                                            )}
+                                        </div>
                                     </div>
-                                    <div className="max-h-48 overflow-y-auto p-3 space-y-1 bg-white">
-                                        {currentStructure.departments.length > 0 ? (
-                                            currentStructure.departments.map(d => (
-                                                <div key={d.id} className="py-1 px-2 hover:bg-gray-50 rounded text-gray-700 text-xs flex justify-between">
-                                                    <span>{d.name}</span>
-                                                    <span className="text-gray-400">ID: {d.id}</span>
-                                                </div>
-                                            ))
-                                        ) : (
-                                            <span className="text-xs text-gray-400 italic">No departments currently in Planday</span>
-                                        )}
+
+                                    {/* Employee Groups List */}
+                                    <div className="border border-gray-200 rounded-xl overflow-hidden">
+                                        <div className="bg-gray-50 px-4 py-2.5 font-bold text-gray-800 border-b border-gray-200 flex justify-between items-center">
+                                            <span>Employee Groups</span>
+                                            <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">{currentStructure.employeeGroups.length}</span>
+                                        </div>
+                                        <div className="max-h-48 overflow-y-auto p-3 space-y-1 bg-white">
+                                            {currentStructure.employeeGroups.length > 0 ? (
+                                                currentStructure.employeeGroups.map(g => (
+                                                    <div key={g.id} className="py-1 px-2 hover:bg-gray-50 rounded text-gray-700 text-xs flex justify-between">
+                                                        <span>{g.name}</span>
+                                                        <span className="text-gray-400">ID: {g.id}</span>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <span className="text-xs text-gray-400 italic">No employee groups currently in Planday</span>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* Employee Groups List */}
-                                <div className="border border-gray-200 rounded-xl overflow-hidden">
-                                    <div className="bg-gray-50 px-4 py-2.5 font-bold text-gray-800 border-b border-gray-200 flex justify-between items-center">
-                                        <span>Employee Groups</span>
-                                        <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">{currentStructure.employeeGroups.length}</span>
-                                    </div>
-                                    <div className="max-h-48 overflow-y-auto p-3 space-y-1 bg-white">
-                                        {currentStructure.employeeGroups.length > 0 ? (
-                                            currentStructure.employeeGroups.map(g => (
-                                                <div key={g.id} className="py-1 px-2 hover:bg-gray-50 rounded text-gray-700 text-xs flex justify-between">
-                                                    <span>{g.name}</span>
-                                                    <span className="text-gray-400">ID: {g.id}</span>
+                                {/* Row 2: Sections and Positions */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* Sections List */}
+                                    <div className="border border-gray-200 rounded-xl overflow-hidden flex flex-col bg-white">
+                                        <div className="bg-gray-50 px-4 py-2.5 font-bold text-gray-800 border-b border-gray-200 flex justify-between items-center">
+                                            <span>Sections</span>
+                                            <span className="text-xs bg-gray-200 text-gray-800 px-2 py-0.5 rounded-full font-semibold">
+                                                {previewSectionDeptId ? (previewSectionDeptId === 'all' ? (currentStructure.sections?.length || 0) : filteredPreviewSections.length) : 0}
+                                            </span>
+                                        </div>
+                                        <div className="p-2.5 bg-slate-50 border-b border-gray-200">
+                                            <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                                                Select Department:
+                                            </label>
+                                            <select
+                                                value={previewSectionDeptId}
+                                                onChange={(e) => setPreviewSectionDeptId(e.target.value)}
+                                                className="w-full text-xs bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-slate-500 focus:border-slate-500 text-gray-800 font-medium"
+                                            >
+                                                <option value="">-- Select Department --</option>
+                                                {currentStructure.departments.map(d => (
+                                                    <option key={d.id} value={d.id}>{d.name}</option>
+                                                ))}
+                                                <option value="all">All Departments</option>
+                                            </select>
+                                        </div>
+                                        <div className="max-h-48 overflow-y-auto p-3 space-y-1 bg-white flex-1">
+                                            {!previewSectionDeptId ? (
+                                                <div className="py-6 px-2 text-center text-xs text-gray-400 italic">
+                                                    Select a department above to review sections
                                                 </div>
-                                            ))
-                                        ) : (
-                                            <span className="text-xs text-gray-400 italic">No employee groups currently in Planday</span>
-                                        )}
+                                            ) : filteredPreviewSections.length > 0 ? (
+                                                filteredPreviewSections.map(s => {
+                                                    const dept = currentStructure.departments.find(d => d.id === s.departmentId);
+                                                    return (
+                                                        <div key={s.id} className="py-1 px-2 hover:bg-gray-50 rounded text-gray-700 text-xs flex justify-between items-center">
+                                                            <div className="flex items-center gap-1.5 truncate">
+                                                                {s.color && (
+                                                                    <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0 border border-gray-200" style={{ backgroundColor: s.color }} />
+                                                                )}
+                                                                <span className="font-medium truncate">{s.name}</span>
+                                                                <span className="text-gray-400 text-[10px]">({dept?.name || `Dept #${s.departmentId}`})</span>
+                                                            </div>
+                                                            <span className="text-gray-400 text-[10px] shrink-0">ID: {s.id}</span>
+                                                        </div>
+                                                    );
+                                                })
+                                            ) : (
+                                                <div className="py-6 px-2 text-center text-xs text-gray-400 italic">
+                                                    No sections available in this department
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Positions List */}
+                                    <div className="border border-gray-200 rounded-xl overflow-hidden flex flex-col bg-white">
+                                        <div className="bg-gray-50 px-4 py-2.5 font-bold text-gray-800 border-b border-gray-200 flex justify-between items-center">
+                                            <span>Positions</span>
+                                            <span className="text-xs bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full font-semibold">
+                                                {previewPositionDeptId ? (previewPositionDeptId === 'all' ? (currentStructure.positions?.length || 0) : filteredPreviewPositions.length) : 0}
+                                            </span>
+                                        </div>
+                                        <div className="p-2.5 bg-teal-50/40 border-b border-gray-200">
+                                            <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                                                Select Department:
+                                            </label>
+                                            <select
+                                                value={previewPositionDeptId}
+                                                onChange={(e) => setPreviewPositionDeptId(e.target.value)}
+                                                className="w-full text-xs bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-gray-800 font-medium"
+                                            >
+                                                <option value="">-- Select Department --</option>
+                                                {currentStructure.departments.map(d => (
+                                                    <option key={d.id} value={d.id}>{d.name}</option>
+                                                ))}
+                                                <option value="all">All Departments</option>
+                                            </select>
+                                        </div>
+                                        <div className="max-h-48 overflow-y-auto p-3 space-y-1 bg-white flex-1">
+                                            {!previewPositionDeptId ? (
+                                                <div className="py-6 px-2 text-center text-xs text-gray-400 italic">
+                                                    Select a department above to review positions
+                                                </div>
+                                            ) : filteredPreviewPositions.length > 0 ? (
+                                                filteredPreviewPositions.map(p => {
+                                                    const group = currentStructure.employeeGroups.find(g => g.id === p.employeeGroupId);
+                                                    const assignedSkillNames = (p.skillIds && p.skillIds.length > 0 && currentStructure.skills)
+                                                        ? currentStructure.skills.filter(s => p.skillIds?.includes(s.id)).map(s => s.name)
+                                                        : [];
+                                                    const revUnit = p.revenueUnitId ? currentStructure.revenueUnits?.find(r => r.id === p.revenueUnitId) : undefined;
+                                                    return (
+                                                        <div key={p.id} className="py-1 px-2 hover:bg-gray-50 rounded text-gray-700 text-xs flex justify-between items-center">
+                                                            <div className="truncate flex items-center gap-1.5 flex-1 min-w-0 mr-2">
+                                                                <span className="font-medium truncate">{p.name}</span>
+                                                                {group && (
+                                                                    <span className="text-gray-400 text-[10px] shrink-0">({group.name})</span>
+                                                                )}
+                                                                {revUnit && (
+                                                                    <span 
+                                                                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0" 
+                                                                        title={`Revenue Unit: ${revUnit.name}`}
+                                                                    >
+                                                                        {revUnit.name}
+                                                                    </span>
+                                                                )}
+                                                                {p.affectRevenue === false && (
+                                                                    <span 
+                                                                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-50 text-rose-700 border border-rose-200 shrink-0" 
+                                                                        title="Exclude from Payroll % (affectRevenue: false)"
+                                                                    >
+                                                                        Payroll: No
+                                                                    </span>
+                                                                )}
+                                                                {assignedSkillNames.length > 0 && (
+                                                                    <span 
+                                                                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200 shrink-0" 
+                                                                        title={`Skills: ${assignedSkillNames.join(', ')}`}
+                                                                    >
+                                                                        {assignedSkillNames.length} {assignedSkillNames.length === 1 ? 'skill' : 'skills'}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <span className="text-gray-400 text-[10px] shrink-0">ID: {p.id}</span>
+                                                        </div>
+                                                    );
+                                                })
+                                            ) : (
+                                                <div className="py-6 px-2 text-center text-xs text-gray-400 italic">
+                                                    No positions available in this department
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* Skills List */}
-                                <div className="border border-gray-200 rounded-xl overflow-hidden">
-                                    <div className="bg-gray-50 px-4 py-2.5 font-bold text-gray-800 border-b border-gray-200 flex justify-between items-center">
-                                        <span>Skills</span>
-                                        <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">{currentStructure.skills.length}</span>
-                                    </div>
-                                    <div className="max-h-48 overflow-y-auto p-3 space-y-1 bg-white">
-                                        {currentStructure.skills.length > 0 ? (
-                                            currentStructure.skills.map(s => (
-                                                <div key={s.id} className="py-1 px-2 hover:bg-gray-50 rounded text-gray-700 text-xs flex justify-between">
-                                                    <span>{s.name}</span>
-                                                    <span className="text-gray-400">ID: {s.id}</span>
-                                                </div>
-                                            ))
-                                        ) : (
-                                            <span className="text-xs text-gray-400 italic">No skills currently in Planday</span>
-                                        )}
+                                {/* Row 3: Skills */}
+                                <div className="grid grid-cols-1 gap-6">
+                                    {/* Skills List */}
+                                    <div className="border border-gray-200 rounded-xl overflow-hidden bg-white">
+                                        <div className="bg-gray-50 px-4 py-2.5 font-bold text-gray-800 border-b border-gray-200 flex justify-between items-center">
+                                            <span>Skills</span>
+                                            <span className="text-xs bg-yellow-100 text-yellow-900 border border-yellow-300 px-2 py-0.5 rounded-full font-semibold">{currentStructure.skills?.length || 0}</span>
+                                        </div>
+                                        <div className="max-h-48 overflow-y-auto p-3 space-y-1 bg-white">
+                                            {(currentStructure.skills && currentStructure.skills.length > 0) ? (
+                                                currentStructure.skills.map(s => (
+                                                    <div key={s.id} className="py-1 px-2 hover:bg-gray-50 rounded text-gray-700 text-xs flex justify-between">
+                                                        <span>{s.name}</span>
+                                                        <span className="text-gray-400">ID: {s.id}</span>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <span className="text-xs text-gray-400 italic">No skills currently in Planday</span>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1948,34 +3411,54 @@ export default function App() {
                 {step === 1 && (appMode === 'delete' || appMode === 'update') && (
                     <div className="space-y-8">
                         {/* Current Structure Overview Banner (reused) */}
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 grid sm:grid-cols-3 gap-6">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
                             <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-center gap-4">
                                 <div className="p-3 bg-blue-600 text-white rounded-lg">
                                     <BuildingOfficeIcon className="w-6 h-6" />
                                 </div>
                                 <div>
                                     <span className="block text-2xl font-extrabold text-blue-900">{currentStructure.departments.length}</span>
-                                    <span className="text-xs font-semibold text-blue-700 uppercase tracking-wider">Current Departments</span>
+                                    <span className="text-xs font-semibold text-blue-700 uppercase tracking-wider">Departments</span>
                                 </div>
                             </div>
 
-                            <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex items-center gap-4">
-                                <div className="p-3 bg-indigo-600 text-white rounded-lg">
+                            <div className="bg-purple-50 p-4 rounded-xl border border-purple-200 flex items-center gap-4">
+                                <div className="p-3 bg-purple-600 text-white rounded-lg">
                                     <UserGroupIcon className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <span className="block text-2xl font-extrabold text-indigo-900">{currentStructure.employeeGroups.length}</span>
-                                    <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wider">Current Employee Groups</span>
+                                    <span className="block text-2xl font-extrabold text-purple-900">{currentStructure.employeeGroups.length}</span>
+                                    <span className="text-xs font-semibold text-purple-700 uppercase tracking-wider">Empl. Groups</span>
                                 </div>
                             </div>
 
-                            <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 flex items-center gap-4">
-                                <div className="p-3 bg-emerald-600 text-white rounded-lg">
+                            <div className="bg-gray-100 p-4 rounded-xl border border-gray-300 flex items-center gap-4">
+                                <div className="p-3 bg-gray-700 text-white rounded-lg">
+                                    <SectionIcon className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <span className="block text-2xl font-extrabold text-gray-900">{currentStructure.sections?.length || 0}</span>
+                                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Sections</span>
+                                </div>
+                            </div>
+
+                            <div className="bg-teal-50 p-4 rounded-xl border border-teal-200 flex items-center gap-4">
+                                <div className="p-3 bg-teal-600 text-white rounded-lg">
+                                    <BriefcaseIcon className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <span className="block text-2xl font-extrabold text-teal-900">{currentStructure.positions?.length || 0}</span>
+                                    <span className="text-xs font-semibold text-teal-700 uppercase tracking-wider">Positions</span>
+                                </div>
+                            </div>
+
+                            <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200 flex items-center gap-4">
+                                <div className="p-3 bg-yellow-600 text-white rounded-lg">
                                     <StarIcon className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <span className="block text-2xl font-extrabold text-emerald-900">{currentStructure.skills.length}</span>
-                                    <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">Current Skills</span>
+                                    <span className="block text-2xl font-extrabold text-yellow-900">{currentStructure.skills?.length || 0}</span>
+                                    <span className="text-xs font-semibold text-yellow-800 uppercase tracking-wider">Skills</span>
                                 </div>
                             </div>
                         </div>
@@ -1984,14 +3467,18 @@ export default function App() {
                             <h2 className="text-2xl font-bold text-gray-900 mb-6">{appMode === 'delete' ? 'Select Items to Delete' : 'Select Items to Update'}</h2>
 
                             {/* Input Method Tabs */}
-                            <div className="flex gap-4 mb-6">
-                                {['selection', 'text', 'file'].map(method => (
+                            <div className="flex flex-wrap items-center gap-2 mb-6">
+                                {(['file', 'selection'] as const).map(method => (
                                     <button 
                                         key={method}
-                                        onClick={() => setDeleteInputMethod(method as any)}
-                                        className={`px-4 py-2 rounded-lg font-bold text-sm transition-colors ${deleteInputMethod === method ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                        onClick={() => setDeleteInputMethod(method)}
+                                        className={`px-4 py-2 rounded-lg font-bold text-sm transition-colors ${
+                                            deleteInputMethod === method 
+                                                ? (appMode === 'update' ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-300' : 'bg-red-100 text-red-800 ring-1 ring-red-300') 
+                                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                        }`}
                                     >
-                                        {method === 'selection' ? 'Select from List' : method === 'text' ? 'Paste Names' : 'Upload File'}
+                                        {method === 'file' ? 'Upload File / Template' : 'Select from List'}
                                     </button>
                                 ))}
                             </div>
@@ -2006,21 +3493,27 @@ export default function App() {
                                         onChange={(e) => setDeleteSearchTerm(e.target.value)}
                                         className="w-full px-4 py-2 border border-gray-200 rounded-xl"
                                     />
-                                    <div className="grid md:grid-cols-2 gap-6">
-                                        {/* Depts */}
-                                        <div className="border border-gray-200 rounded-xl overflow-hidden">
+                                    <div className="space-y-6 text-sm">
+                                        {/* Row 1: Departments and Employee Groups */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            {/* Departments */}
+                                        <div className="border border-gray-200 rounded-xl overflow-hidden flex flex-col bg-white">
                                             <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200 flex justify-between items-center">
-                                                <span className="font-bold text-gray-800">Departments</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-gray-800">Departments</span>
+                                                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold">
+                                                        {deleteSelectedDepts.size}/{currentStructure.departments.length}
+                                                    </span>
+                                                </div>
                                                 <button
+                                                    type="button"
                                                     onClick={() => {
                                                         const filtered = currentStructure.departments.filter(d => d.name.toLowerCase().includes(deleteSearchTerm.toLowerCase()));
-                                                        if (filtered.every(d => deleteSelectedDepts.has(d.id))) {
-                                                            // Deselect all filtered
+                                                        if (filtered.length > 0 && filtered.every(d => deleteSelectedDepts.has(d.id))) {
                                                             const newSet = new Set(deleteSelectedDepts);
                                                             filtered.forEach(d => newSet.delete(d.id));
                                                             setDeleteSelectedDepts(newSet);
                                                         } else {
-                                                            // Select all filtered
                                                             const newSet = new Set(deleteSelectedDepts);
                                                             filtered.forEach(d => newSet.add(d.id));
                                                             setDeleteSelectedDepts(newSet);
@@ -2031,236 +3524,754 @@ export default function App() {
                                                     {currentStructure.departments.filter(d => d.name.toLowerCase().includes(deleteSearchTerm.toLowerCase())).length > 0 && currentStructure.departments.filter(d => d.name.toLowerCase().includes(deleteSearchTerm.toLowerCase())).every(d => deleteSelectedDepts.has(d.id)) ? 'Deselect All' : 'Select All'}
                                                 </button>
                                             </div>
-                                            <div className="max-h-64 overflow-y-auto p-3 space-y-1">
+                                            <div className="max-h-64 overflow-y-auto p-3 space-y-1 flex-1">
                                                 {currentStructure.departments.filter(d => d.name.toLowerCase().includes(deleteSearchTerm.toLowerCase())).map(d => (
-                                                    <label key={d.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer">
-                                                        <input 
-                                                            type="checkbox" 
-                                                            checked={deleteSelectedDepts.has(d.id)}
-                                                            onChange={(e) => {
-                                                                const newSet = new Set(deleteSelectedDepts);
-                                                                if (e.target.checked) newSet.add(d.id);
-                                                                else newSet.delete(d.id);
-                                                                setDeleteSelectedDepts(newSet);
-                                                            }}
-                                                            className="w-4 h-4 text-red-600 rounded focus:ring-red-500"
-                                                        />
-                                                        <span className="text-sm text-gray-700">{d.name}</span>
+                                                    <label key={d.id} className="flex items-center justify-between gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                                                        <div className="flex items-center gap-2.5 truncate">
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={deleteSelectedDepts.has(d.id)}
+                                                                onChange={(e) => {
+                                                                    const newSet = new Set(deleteSelectedDepts);
+                                                                    if (e.target.checked) newSet.add(d.id);
+                                                                    else newSet.delete(d.id);
+                                                                    setDeleteSelectedDepts(newSet);
+                                                                }}
+                                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                            />
+                                                            <span className="text-xs text-gray-800 font-medium truncate">{d.name}</span>
+                                                        </div>
+                                                        <span className="text-[10px] text-gray-400 shrink-0">ID: {d.id}</span>
                                                     </label>
                                                 ))}
+                                                {currentStructure.departments.length === 0 && (
+                                                    <span className="text-xs text-gray-400 italic block p-2">No departments found</span>
+                                                )}
                                             </div>
                                         </div>
-                                        {/* Groups */}
-                                        <div className="border border-gray-200 rounded-xl overflow-hidden">
+
+                                        {/* Employee Groups */}
+                                        <div className="border border-gray-200 rounded-xl overflow-hidden flex flex-col bg-white">
                                             <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200 flex justify-between items-center">
-                                                <span className="font-bold text-gray-800">Employee Groups</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-gray-800">Employee Groups</span>
+                                                    <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full font-semibold">
+                                                        {deleteSelectedGroups.size}/{currentStructure.employeeGroups.length}
+                                                    </span>
+                                                </div>
                                                 <button
+                                                    type="button"
                                                     onClick={() => {
                                                         const filtered = currentStructure.employeeGroups.filter(g => g.name.toLowerCase().includes(deleteSearchTerm.toLowerCase()));
-                                                        if (filtered.every(g => deleteSelectedGroups.has(g.id))) {
-                                                            // Deselect all filtered
+                                                        if (filtered.length > 0 && filtered.every(g => deleteSelectedGroups.has(g.id))) {
                                                             const newSet = new Set(deleteSelectedGroups);
                                                             filtered.forEach(g => newSet.delete(g.id));
                                                             setDeleteSelectedGroups(newSet);
                                                         } else {
-                                                            // Select all filtered
                                                             const newSet = new Set(deleteSelectedGroups);
                                                             filtered.forEach(g => newSet.add(g.id));
                                                             setDeleteSelectedGroups(newSet);
                                                         }
                                                     }}
-                                                    className="text-xs font-bold text-blue-600 hover:text-blue-800"
+                                                    className="text-xs font-bold text-purple-600 hover:text-purple-800"
                                                 >
                                                     {currentStructure.employeeGroups.filter(g => g.name.toLowerCase().includes(deleteSearchTerm.toLowerCase())).length > 0 && currentStructure.employeeGroups.filter(g => g.name.toLowerCase().includes(deleteSearchTerm.toLowerCase())).every(g => deleteSelectedGroups.has(g.id)) ? 'Deselect All' : 'Select All'}
                                                 </button>
                                             </div>
-                                            <div className="max-h-64 overflow-y-auto p-3 space-y-1">
+                                            <div className="max-h-64 overflow-y-auto p-3 space-y-1 flex-1">
                                                 {currentStructure.employeeGroups.filter(g => g.name.toLowerCase().includes(deleteSearchTerm.toLowerCase())).map(g => (
-                                                    <label key={g.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer">
-                                                        <input 
-                                                            type="checkbox" 
-                                                            checked={deleteSelectedGroups.has(g.id)}
-                                                            onChange={(e) => {
-                                                                const newSet = new Set(deleteSelectedGroups);
-                                                                if (e.target.checked) newSet.add(g.id);
-                                                                else newSet.delete(g.id);
-                                                                setDeleteSelectedGroups(newSet);
-                                                            }}
-                                                            className="w-4 h-4 text-red-600 rounded focus:ring-red-500"
-                                                        />
-                                                        <span className="text-sm text-gray-700">{g.name}</span>
+                                                    <label key={g.id} className="flex items-center justify-between gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                                                        <div className="flex items-center gap-2.5 truncate">
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={deleteSelectedGroups.has(g.id)}
+                                                                onChange={(e) => {
+                                                                    const newSet = new Set(deleteSelectedGroups);
+                                                                    if (e.target.checked) newSet.add(g.id);
+                                                                    else newSet.delete(g.id);
+                                                                    setDeleteSelectedGroups(newSet);
+                                                                }}
+                                                                className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                                                            />
+                                                            <span className="text-xs text-gray-800 font-medium truncate">{g.name}</span>
+                                                        </div>
+                                                        <span className="text-[10px] text-gray-400 shrink-0">ID: {g.id}</span>
                                                     </label>
                                                 ))}
+                                                {currentStructure.employeeGroups.length === 0 && (
+                                                    <span className="text-xs text-gray-400 italic block p-2">No employee groups found</span>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
-                                    <button 
-                                        onClick={generateActionReviewList}
-                                        disabled={deleteSelectedDepts.size === 0 && deleteSelectedGroups.size === 0}
-                                        className="w-full py-3 px-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-sm transition-all disabled:opacity-50"
-                                    >
-                                        Review Items ({deleteSelectedDepts.size + deleteSelectedGroups.size} items)
-                                    </button>
-                                </div>
-                            )}
 
-                            {/* Method: Text */}
-                            {deleteInputMethod === 'text' && (
-                                <div className="space-y-6">
-                                    <div className="grid md:grid-cols-2 gap-6">
-                                        <div>
-                                            <label className="block text-sm font-bold text-gray-700 mb-2">Departments (comma, semicolon, or newline separated)</label>
-                                            <textarea 
-                                                value={deleteDeptText}
-                                                onChange={e => setDeleteDeptText(e.target.value)}
-                                                className="w-full h-32 px-4 py-2 border border-gray-200 rounded-xl"
-                                                placeholder="Sales, Marketing; IT&#10;Finance"
-                                            />
+                                    {/* Row 2: Sections and Positions */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {/* Sections */}
+                                        <div className="border border-gray-200 rounded-xl overflow-hidden flex flex-col bg-white">
+                                            <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200 flex justify-between items-center">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-gray-800">Sections</span>
+                                                    <span className="text-xs bg-gray-200 text-gray-800 px-2 py-0.5 rounded-full font-semibold">
+                                                        {deleteSelectedSections.size}/{(currentStructure.sections || []).length}
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const filtered = (currentStructure.sections || []).filter(s => {
+                                                            const matchesSearch = s.name.toLowerCase().includes(deleteSearchTerm.toLowerCase());
+                                                            const matchesDept = selectListSectionDeptId === 'all' || !selectListSectionDeptId || String(s.departmentId) === String(selectListSectionDeptId);
+                                                            return matchesSearch && matchesDept;
+                                                        });
+                                                        if (filtered.length > 0 && filtered.every(s => deleteSelectedSections.has(s.id))) {
+                                                            const newSet = new Set(deleteSelectedSections);
+                                                            filtered.forEach(s => newSet.delete(s.id));
+                                                            setDeleteSelectedSections(newSet);
+                                                        } else {
+                                                            const newSet = new Set(deleteSelectedSections);
+                                                            filtered.forEach(s => newSet.add(s.id));
+                                                            setDeleteSelectedSections(newSet);
+                                                        }
+                                                    }}
+                                                    className="text-xs font-bold text-gray-700 hover:text-gray-900"
+                                                >
+                                                    {(() => {
+                                                        const filtered = (currentStructure.sections || []).filter(s => {
+                                                            const matchesSearch = s.name.toLowerCase().includes(deleteSearchTerm.toLowerCase());
+                                                            const matchesDept = selectListSectionDeptId === 'all' || !selectListSectionDeptId || String(s.departmentId) === String(selectListSectionDeptId);
+                                                            return matchesSearch && matchesDept;
+                                                        });
+                                                        return filtered.length > 0 && filtered.every(s => deleteSelectedSections.has(s.id)) ? 'Deselect All' : 'Select All';
+                                                    })()}
+                                                </button>
+                                            </div>
+                                            <div className="p-2.5 bg-slate-50 border-b border-gray-200">
+                                                <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                                                    Select Department:
+                                                </label>
+                                                <select
+                                                    value={selectListSectionDeptId}
+                                                    onChange={(e) => setSelectListSectionDeptId(e.target.value)}
+                                                    className="w-full text-xs bg-white border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-slate-500 text-gray-800 font-medium"
+                                                >
+                                                    <option value="all">All Departments</option>
+                                                    {currentStructure.departments.map(d => (
+                                                        <option key={d.id} value={d.id}>{d.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="max-h-64 overflow-y-auto p-3 space-y-1 flex-1">
+                                                {(currentStructure.sections || [])
+                                                    .filter(s => {
+                                                        const matchesSearch = s.name.toLowerCase().includes(deleteSearchTerm.toLowerCase());
+                                                        const matchesDept = selectListSectionDeptId === 'all' || !selectListSectionDeptId || String(s.departmentId) === String(selectListSectionDeptId);
+                                                        return matchesSearch && matchesDept;
+                                                    })
+                                                    .map(s => {
+                                                        const dept = currentStructure.departments.find(d => d.id === s.departmentId);
+                                                        return (
+                                                            <label key={s.id} className="flex items-center justify-between gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                                                                <div className="flex items-center gap-2 truncate">
+                                                                    <input 
+                                                                        type="checkbox" 
+                                                                        checked={deleteSelectedSections.has(s.id)}
+                                                                        onChange={(e) => {
+                                                                            const newSet = new Set(deleteSelectedSections);
+                                                                            if (e.target.checked) newSet.add(s.id);
+                                                                            else newSet.delete(s.id);
+                                                                            setDeleteSelectedSections(newSet);
+                                                                        }}
+                                                                        className="w-4 h-4 text-gray-700 rounded focus:ring-gray-600"
+                                                                    />
+                                                                    {s.color && (
+                                                                        <span className="inline-block w-2.5 h-2.5 rounded-full border border-gray-200 shrink-0" style={{ backgroundColor: s.color }} />
+                                                                    )}
+                                                                    <div className="truncate">
+                                                                        <span className="text-xs text-gray-800 font-medium truncate block">{s.name}</span>
+                                                                        <span className="text-[10px] text-gray-400 block truncate">({dept?.name || `Dept #${s.departmentId}`})</span>
+                                                                    </div>
+                                                                </div>
+                                                                <span className="text-[10px] text-gray-400 shrink-0">ID: {s.id}</span>
+                                                            </label>
+                                                        );
+                                                    })}
+                                                {(currentStructure.sections || []).length === 0 && (
+                                                    <span className="text-xs text-gray-400 italic block p-2">No sections found</span>
+                                                )}
+                                            </div>
                                         </div>
-                                        <div>
-                                            <label className="block text-sm font-bold text-gray-700 mb-2">Employee Groups (comma, semicolon, or newline separated)</label>
-                                            <textarea 
-                                                value={deleteGroupText}
-                                                onChange={e => setDeleteGroupText(e.target.value)}
-                                                className="w-full h-32 px-4 py-2 border border-gray-200 rounded-xl"
-                                                placeholder="Manager, Associate; Admin&#10;Intern"
-                                            />
+
+                                        {/* Positions */}
+                                        <div className="border border-gray-200 rounded-xl overflow-hidden flex flex-col bg-white">
+                                            <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200 flex justify-between items-center">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-gray-800">Positions</span>
+                                                    <span className="text-xs bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full font-semibold">
+                                                        {deleteSelectedPositions.size}/{(currentStructure.positions || []).length}
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const filtered = (currentStructure.positions || []).filter(p => {
+                                                            const matchesSearch = p.name.toLowerCase().includes(deleteSearchTerm.toLowerCase());
+                                                            const matchesDept = selectListPositionDeptId === 'all' || !selectListPositionDeptId || String(p.departmentId) === String(selectListPositionDeptId);
+                                                            return matchesSearch && matchesDept;
+                                                        });
+                                                        if (filtered.length > 0 && filtered.every(p => deleteSelectedPositions.has(p.id))) {
+                                                            const newSet = new Set(deleteSelectedPositions);
+                                                            filtered.forEach(p => newSet.delete(p.id));
+                                                            setDeleteSelectedPositions(newSet);
+                                                        } else {
+                                                            const newSet = new Set(deleteSelectedPositions);
+                                                            filtered.forEach(p => newSet.add(p.id));
+                                                            setDeleteSelectedPositions(newSet);
+                                                        }
+                                                    }}
+                                                    className="text-xs font-bold text-teal-600 hover:text-teal-800"
+                                                >
+                                                    {(() => {
+                                                        const filtered = (currentStructure.positions || []).filter(p => {
+                                                            const matchesSearch = p.name.toLowerCase().includes(deleteSearchTerm.toLowerCase());
+                                                            const matchesDept = selectListPositionDeptId === 'all' || !selectListPositionDeptId || String(p.departmentId) === String(selectListPositionDeptId);
+                                                            return matchesSearch && matchesDept;
+                                                        });
+                                                        return filtered.length > 0 && filtered.every(p => deleteSelectedPositions.has(p.id)) ? 'Deselect All' : 'Select All';
+                                                    })()}
+                                                </button>
+                                            </div>
+                                            <div className="p-2.5 bg-teal-50/40 border-b border-gray-200">
+                                                <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                                                    Select Department:
+                                                </label>
+                                                <select
+                                                    value={selectListPositionDeptId}
+                                                    onChange={(e) => setSelectListPositionDeptId(e.target.value)}
+                                                    className="w-full text-xs bg-white border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-teal-500 text-gray-800 font-medium"
+                                                >
+                                                    <option value="all">All Departments</option>
+                                                    {currentStructure.departments.map(d => (
+                                                        <option key={d.id} value={d.id}>{d.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="max-h-64 overflow-y-auto p-3 space-y-1 flex-1">
+                                                {(currentStructure.positions || [])
+                                                    .filter(p => {
+                                                        const matchesSearch = p.name.toLowerCase().includes(deleteSearchTerm.toLowerCase());
+                                                        const matchesDept = selectListPositionDeptId === 'all' || !selectListPositionDeptId || String(p.departmentId) === String(selectListPositionDeptId);
+                                                        return matchesSearch && matchesDept;
+                                                    })
+                                                    .map(p => {
+                                                        const group = currentStructure.employeeGroups.find(g => g.id === p.employeeGroupId);
+                                                        return (
+                                                            <label key={p.id} className="flex items-center justify-between gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                                                                <div className="flex items-center gap-2 truncate">
+                                                                    <input 
+                                                                        type="checkbox" 
+                                                                        checked={deleteSelectedPositions.has(p.id)}
+                                                                        onChange={(e) => {
+                                                                            const newSet = new Set(deleteSelectedPositions);
+                                                                            if (e.target.checked) newSet.add(p.id);
+                                                                            else newSet.delete(p.id);
+                                                                            setDeleteSelectedPositions(newSet);
+                                                                        }}
+                                                                        className="w-4 h-4 text-teal-600 rounded focus:ring-teal-500"
+                                                                    />
+                                                                    <div className="truncate flex-1 min-w-0">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <span className="text-xs text-gray-800 font-medium truncate block">{p.name}</span>
+                                                                            {p.skillIds && p.skillIds.length > 0 && currentStructure.skills && (
+                                                                                <span 
+                                                                                    className="inline-flex items-center px-1 py-0.2 rounded text-[9px] font-medium bg-amber-50 text-amber-700 border border-amber-200 shrink-0"
+                                                                                    title={`Skills: ${currentStructure.skills.filter(s => p.skillIds?.includes(s.id)).map(s => s.name).join(', ')}`}
+                                                                                >
+                                                                                    {p.skillIds.length} {p.skillIds.length === 1 ? 'skill' : 'skills'}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        {group && (
+                                                                            <span className="text-[10px] text-gray-400 block truncate">({group.name})</span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                <span className="text-[10px] text-gray-400 shrink-0">ID: {p.id}</span>
+                                                            </label>
+                                                        );
+                                                    })}
+                                                {(currentStructure.positions || []).length === 0 && (
+                                                    <span className="text-xs text-gray-400 italic block p-2">No positions found</span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
-                                    <button 
-                                        onClick={generateActionReviewList}
-                                        disabled={!deleteDeptText.trim() && !deleteGroupText.trim()}
-                                        className="w-full py-3 px-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-sm transition-all disabled:opacity-50"
-                                    >
-                                        Review Items
-                                    </button>
+
+                                    {/* Row 3: Skills */}
+                                    <div className="grid grid-cols-1 gap-6">
+                                        {/* Skills */}
+                                        <div className="border border-gray-200 rounded-xl overflow-hidden flex flex-col bg-white">
+                                            <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200 flex justify-between items-center">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-gray-800">Skills</span>
+                                                    <span className="text-xs bg-yellow-100 text-yellow-900 border border-yellow-300 px-2 py-0.5 rounded-full font-semibold">
+                                                        {deleteSelectedSkills.size}/{(currentStructure.skills || []).length}
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const filtered = (currentStructure.skills || []).filter(s => s.name.toLowerCase().includes(deleteSearchTerm.toLowerCase()));
+                                                        if (filtered.length > 0 && filtered.every(s => deleteSelectedSkills.has(s.id))) {
+                                                            const newSet = new Set(deleteSelectedSkills);
+                                                            filtered.forEach(s => newSet.delete(s.id));
+                                                            setDeleteSelectedSkills(newSet);
+                                                        } else {
+                                                            const newSet = new Set(deleteSelectedSkills);
+                                                            filtered.forEach(s => newSet.add(s.id));
+                                                            setDeleteSelectedSkills(newSet);
+                                                        }
+                                                    }}
+                                                    className="text-xs font-bold text-yellow-700 hover:text-yellow-900"
+                                                >
+                                                    {(currentStructure.skills || []).filter(s => s.name.toLowerCase().includes(deleteSearchTerm.toLowerCase())).length > 0 && (currentStructure.skills || []).filter(s => s.name.toLowerCase().includes(deleteSearchTerm.toLowerCase())).every(s => deleteSelectedSkills.has(s.id)) ? 'Deselect All' : 'Select All'}
+                                                </button>
+                                            </div>
+                                            <div className="max-h-64 overflow-y-auto p-3 space-y-1 flex-1">
+                                                {(currentStructure.skills || [])
+                                                    .filter(s => s.name.toLowerCase().includes(deleteSearchTerm.toLowerCase()))
+                                                    .map(s => (
+                                                        <label key={s.id} className="flex items-center justify-between gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                                                            <div className="flex items-center gap-2.5 truncate">
+                                                                <input 
+                                                                    type="checkbox" 
+                                                                    checked={deleteSelectedSkills.has(s.id)}
+                                                                    onChange={(e) => {
+                                                                        const newSet = new Set(deleteSelectedSkills);
+                                                                        if (e.target.checked) newSet.add(s.id);
+                                                                        else newSet.delete(s.id);
+                                                                        setDeleteSelectedSkills(newSet);
+                                                                    }}
+                                                                    className="w-4 h-4 text-yellow-600 rounded focus:ring-yellow-500"
+                                                                />
+                                                                <span className="text-xs text-gray-800 font-medium truncate">{s.name}</span>
+                                                            </div>
+                                                            <span className="text-[10px] text-gray-400 shrink-0">ID: {s.id}</span>
+                                                        </label>
+                                                    ))}
+                                                {(currentStructure.skills || []).length === 0 && (
+                                                    <span className="text-xs text-gray-400 italic block p-2">No skills found</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Action Footer */}
+                                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-200">
+                                        <div className="text-sm text-gray-600">
+                                            <span className="font-bold text-gray-900">
+                                                {deleteSelectedDepts.size + deleteSelectedGroups.size + deleteSelectedSections.size + deleteSelectedPositions.size + deleteSelectedSkills.size}
+                                            </span> items selected across all types
+                                        </div>
+                                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                                            {(deleteSelectedDepts.size + deleteSelectedGroups.size + deleteSelectedSections.size + deleteSelectedPositions.size + deleteSelectedSkills.size) > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setDeleteSelectedDepts(new Set());
+                                                        setDeleteSelectedGroups(new Set());
+                                                        setDeleteSelectedSections(new Set());
+                                                        setDeleteSelectedPositions(new Set());
+                                                        setDeleteSelectedSkills(new Set());
+                                                    }}
+                                                    className="px-4 py-2.5 text-sm font-semibold text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+                                                >
+                                                    Clear All
+                                                </button>
+                                            )}
+                                            <button 
+                                                onClick={generateActionReviewList}
+                                                disabled={deleteSelectedDepts.size === 0 && deleteSelectedSections.size === 0 && deleteSelectedGroups.size === 0 && deleteSelectedPositions.size === 0 && deleteSelectedSkills.size === 0}
+                                                className={`w-full sm:w-auto px-6 py-3 font-bold rounded-xl shadow-sm transition-all disabled:opacity-50 text-white ${
+                                                    appMode === 'update' 
+                                                        ? 'bg-amber-600 hover:bg-amber-700' 
+                                                        : 'bg-red-600 hover:bg-red-700'
+                                                }`}
+                                            >
+                                                {appMode === 'update' ? 'Configure & Review' : 'Review Selected Items'} ({deleteSelectedDepts.size + deleteSelectedSections.size + deleteSelectedGroups.size + deleteSelectedPositions.size + deleteSelectedSkills.size} items)
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
 
                             {/* Method: File */}
                             {deleteInputMethod === 'file' && (
-                                <div className="space-y-6">
-                                    <div className="relative border-2 border-dashed border-gray-300 hover:border-red-500 rounded-2xl p-6 text-center transition-colors bg-gray-50/50 hover:bg-red-50/30 group">
-                                        <input 
-                                            type="file" 
-                                            accept=".xlsx,.xls,.csv" 
-                                            onChange={handleFileUpload}
-                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                        />
-                                        <CloudUploadIcon className="w-10 h-10 text-gray-400 group-hover:text-red-600 mx-auto mb-2 transition-colors" />
-                                        <span className="block text-sm font-bold text-gray-800">
-                                            Click or Drag & Drop Excel File
-                                        </span>
-                                        <span className="block text-xs text-gray-500 mt-1">
-                                            Names in file will be matched against Planday structure.
-                                        </span>
+                                <div className="grid md:grid-cols-2 gap-8">
+                                    {/* Panel A: Template Generator / Structure Export */}
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-between">
+                                        <div>
+                                            <div className="flex items-center gap-3 mb-3">
+                                                <div className={`p-2 rounded-lg ${appMode === 'update' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                                                    <DownloadIcon className="w-5 h-5" />
+                                                </div>
+                                                <div>
+                                                    <h3 className="text-lg font-bold text-gray-900">
+                                                        1. Download {appMode === 'update' ? 'Update' : 'Delete'} Template
+                                                    </h3>
+                                                    <span className="text-xs font-semibold text-gray-500">
+                                                        {appMode === 'update' ? 'Includes update columns & Reference Data sheet' : 'Simple sheet with Names only & Reference Data'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <p className="text-xs text-gray-600 mb-5">
+                                                {appMode === 'update'
+                                                    ? "Select which structure elements to include. The template provides columns for your updates, and the Reference Data sheet lists all existing API IDs."
+                                                    : "Select which elements to include. The delete sheet only includes the item names for matching, while the Reference Data sheet lists your existing API IDs."}
+                                            </p>
+
+                                            {/* Selection Controls */}
+                                            <div className="space-y-2.5 bg-gray-50 p-4 rounded-xl border border-gray-200 mb-5">
+                                                <span className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Include in Excel file:</span>
+                                                <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={includeDepartments} 
+                                                        onChange={(e) => setIncludeDepartments(e.target.checked)}
+                                                        className={`w-4 h-4 rounded ${appMode === 'update' ? 'text-amber-600 focus:ring-amber-500' : 'text-red-600 focus:ring-red-500'}`}
+                                                    />
+                                                    <span>Departments {appMode === 'delete' ? '(Names only)' : ''}</span>
+                                                </label>
+                                                <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={includeEmployeeGroups} 
+                                                        onChange={(e) => setIncludeEmployeeGroups(e.target.checked)}
+                                                        className={`w-4 h-4 rounded ${appMode === 'update' ? 'text-amber-600 focus:ring-amber-500' : 'text-red-600 focus:ring-red-500'}`}
+                                                    />
+                                                    <span>Employee Groups {appMode === 'delete' ? '(Names only)' : ''}</span>
+                                                </label>
+                                                {appMode === 'update' && includeEmployeeGroups && (
+                                                    <label className="flex items-center gap-3 cursor-pointer text-xs font-medium text-gray-700 ml-7">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={includeWageColumns} 
+                                                            onChange={(e) => setIncludeWageColumns(e.target.checked)}
+                                                            className="w-3.5 h-3.5 text-amber-600 rounded focus:ring-amber-500"
+                                                        />
+                                                        <span>Include Default Wage Data columns</span>
+                                                    </label>
+                                                )}
+                                                <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={includeSections} 
+                                                        onChange={(e) => setIncludeSections(e.target.checked)}
+                                                        className={`w-4 h-4 rounded ${appMode === 'update' ? 'text-amber-600 focus:ring-amber-500' : 'text-red-600 focus:ring-red-500'}`}
+                                                    />
+                                                    <span>Sections {appMode === 'delete' ? '(Names only)' : ''}</span>
+                                                </label>
+                                                <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={includePositions} 
+                                                        onChange={(e) => setIncludePositions(e.target.checked)}
+                                                        className={`w-4 h-4 rounded ${appMode === 'update' ? 'text-amber-600 focus:ring-amber-500' : 'text-red-600 focus:ring-red-500'}`}
+                                                    />
+                                                    <span>Positions {appMode === 'delete' ? '(Names only)' : ''}</span>
+                                                </label>
+                                                <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-800">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={includeSkills} 
+                                                        onChange={(e) => setIncludeSkills(e.target.checked)}
+                                                        className={`w-4 h-4 rounded ${appMode === 'update' ? 'text-amber-600 focus:ring-amber-500' : 'text-red-600 focus:ring-red-500'}`}
+                                                    />
+                                                    <span>Skills {appMode === 'delete' ? '(Names only)' : ''}</span>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2.5 mt-2">
+                                            <button 
+                                                type="button"
+                                                onClick={populateWithCurrent ? handleDownloadCurrentStructure : handleDownloadBlankTemplate}
+                                                disabled={!includeDepartments && !includeSections && !includeEmployeeGroups && !includeSkills && !includePositions}
+                                                className={`w-full py-2.5 px-4 text-white font-bold rounded-xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 ${
+                                                    appMode === 'update' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-red-600 hover:bg-red-700'
+                                                }`}
+                                            >
+                                                <DownloadIcon className="w-4 h-4" />
+                                                <span>Download Template</span>
+                                            </button>
+                                            
+                                            <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-gray-700 justify-center">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={populateWithCurrent} 
+                                                    onChange={(e) => setPopulateWithCurrent(e.target.checked)}
+                                                    className={`w-4 h-4 rounded ${appMode === 'update' ? 'text-amber-600 focus:ring-amber-500' : 'text-red-600 focus:ring-red-500'}`}
+                                                />
+                                                <span>Populate with current portal structure?</span>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    {/* Panel B: Upload File */}
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-between">
+                                        <div>
+                                            <div className="flex items-center gap-3 mb-3">
+                                                <div className={`p-2 rounded-lg ${appMode === 'update' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                                                    <CloudUploadIcon className="w-5 h-5" />
+                                                </div>
+                                                <h3 className="text-lg font-bold text-gray-900">
+                                                    2. Upload File for {appMode === 'update' ? 'Update' : 'Deletion'}
+                                                </h3>
+                                            </div>
+                                            <p className="text-xs text-gray-600 mb-5">
+                                                {appMode === 'update'
+                                                    ? 'Upload your Excel file (.xlsx, .xls) or CSV. Columns will be matched in the next step.'
+                                                    : 'Upload your Excel file (.xlsx, .xls) or CSV. Department and Employee Group names will be matched for deletion.'}
+                                            </p>
+                                        </div>
+
+                                        <div className={`relative border-2 border-dashed ${
+                                            appMode === 'update' 
+                                                ? 'border-amber-300 hover:border-amber-500 bg-amber-50/30 hover:bg-amber-50/60' 
+                                                : 'border-red-300 hover:border-red-500 bg-red-50/30 hover:bg-red-50/60'
+                                        } rounded-2xl p-6 text-center transition-colors group flex-1 flex flex-col items-center justify-center min-h-[180px]`}>
+                                            <input 
+                                                type="file" 
+                                                accept=".xlsx,.xls,.csv" 
+                                                onChange={handleFileUpload}
+                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                            />
+                                            <CloudUploadIcon className={`w-10 h-10 ${appMode === 'update' ? 'text-amber-500 group-hover:text-amber-600' : 'text-red-500 group-hover:text-red-600'} mx-auto mb-2 transition-colors`} />
+                                            <span className="block text-sm font-bold text-gray-800">
+                                                Click or Drag & Drop Excel File
+                                            </span>
+                                            <span className="block text-xs text-gray-500 mt-1">
+                                                Supports .xlsx, .xls, .csv
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             )}
 
                         </div>
                     </div>                )}                {/* --- STEP 3: FIELD MAPPING --- */}
-                {step === 2 && ((appMode === 'import' && importInputMethod === 'file') || deleteInputMethod === 'file') && (
+                {step === 2 && (appMode === 'import' || deleteInputMethod === 'file') && (
                     <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 space-y-8">
                         <div>
                             <div className="flex justify-between items-center mb-2">
-                                <h2 className="text-2xl font-bold text-gray-900">Map File Columns</h2>
+                                <h2 className="text-2xl font-bold text-gray-900">
+                                    {appMode === 'delete' ? 'Map File Columns for Deletion' : appMode === 'update' ? 'Map File Columns for Update' : 'Map File Columns'}
+                                </h2>
                                 <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
                                     File: <strong>{uploadedFileName}</strong> ({parsedRows.length} rows)
                                 </span>
                             </div>
                             <p className="text-sm text-gray-600">
-                                Select which columns from your uploaded file represent Departments and Employee Groups.
+                                {appMode === 'delete' 
+                                    ? 'Select which columns from your uploaded file contain the Names of Departments and Employee Groups to delete.'
+                                    : 'Select which columns from your uploaded file represent Departments and Employee Groups.'}
                             </p>
-                        </div>                        {/* Mapping Cards */}
+                        </div>
+
+                        {/* Mapping Cards */}
                         <div className="space-y-6">
                             {/* Departments Card */}
                             <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
-                                <h3 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-200 pb-2">Departments</h3>
-                                <div className="grid md:grid-cols-2 gap-4">
+                                <div className="flex justify-between items-center mb-4 border-b border-gray-200 pb-2">
+                                    <h3 className="text-lg font-bold text-gray-900">Departments</h3>
+                                    {appMode === 'update' && (
+                                        <span className="text-xs bg-amber-100 text-amber-800 font-semibold px-2.5 py-0.5 rounded-full">
+                                            Update Mode
+                                        </span>
+                                    )}
+                                    {appMode === 'delete' && (
+                                        <span className="text-xs bg-red-100 text-red-800 font-semibold px-2.5 py-0.5 rounded-full">
+                                            Delete Mode
+                                        </span>
+                                    )}
+                                </div>
+                                <div className={`grid ${appMode === 'delete' ? 'grid-cols-1 md:grid-cols-2' : 'md:grid-cols-3'} gap-4`}>
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Departments:</label>
+                                        <label className="block text-sm font-bold text-gray-800 mb-1">
+                                            {appMode === 'delete' ? 'Department Name (to Delete):' : appMode === 'update' ? 'Department (Match by):' : 'Departments:'}
+                                        </label>
+                                        <span className="block text-xs text-gray-500 mb-2">
+                                            {appMode === 'delete' ? 'Column with department names to delete' : appMode === 'update' ? 'Existing department name in Planday' : 'Department name'}
+                                        </span>
                                         <select value={deptColumn} onChange={(e) => setDeptColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
                                             <option value="">-- None --</option>
                                             {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                         </select>
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Dept Number (Opt):</label>
-                                        <select value={deptNumberColumn} onChange={(e) => setDeptNumberColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
-                                            <option value="">-- None --</option>
-                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                        </select>
-                                    </div>
+                                    {appMode !== 'delete' && (
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-800 mb-1 flex items-center gap-1.5">
+                                                <span>UPDATE - Department Name:</span>
+                                                <span className="text-xs font-normal text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">New Name</span>
+                                            </label>
+                                            <span className="block text-xs text-gray-500 mb-2">
+                                                New name to rename department to (Optional)
+                                            </span>
+                                            <select value={deptUpdateNameColumn} onChange={(e) => setDeptUpdateNameColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 font-medium">
+                                                <option value="">-- None --</option>
+                                                {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
+                                    {appMode !== 'delete' && (
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-800 mb-1">
+                                                {appMode === 'update' ? 'Department Number (Optional):' : 'Dept Number (Opt):'}
+                                            </label>
+                                            <span className="block text-xs text-gray-500 mb-2">
+                                                {appMode === 'update' ? 'New or updated department number' : 'Optional department number'}
+                                            </span>
+                                            <select value={deptNumberColumn} onChange={(e) => setDeptNumberColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
+                                                <option value="">-- None --</option>
+                                                {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
                             {/* Employee Groups Card */}
                             <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
-                                <h3 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-200 pb-2">Employee Groups</h3>
-                                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                <div className="flex justify-between items-center mb-4 border-b border-gray-200 pb-2">
+                                    <h3 className="text-lg font-bold text-gray-900">Employee Groups</h3>
+                                    {appMode === 'delete' && (
+                                        <span className="text-xs bg-red-100 text-red-800 font-semibold px-2.5 py-0.5 rounded-full">
+                                            Delete Mode
+                                        </span>
+                                    )}
+                                </div>
+                                <div className={`grid ${appMode === 'delete' ? 'grid-cols-1 md:grid-cols-2' : 'md:grid-cols-2 lg:grid-cols-3'} gap-4`}>
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Employee Groups:</label>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">
+                                            {appMode === 'delete' ? 'Employee Group Name (to Delete):' : 'Employee Groups:'}
+                                        </label>
                                         <select value={groupColumn} onChange={(e) => setGroupColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
                                             <option value="">-- None --</option>
                                             {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                         </select>
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Default Wage Type:</label>
-                                        <select value={wageTypeColumn} onChange={(e) => setWageTypeColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
-                                            <option value="">-- None --</option>
-                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Rate:</label>
-                                        <select value={rateColumn} onChange={(e) => setRateColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
-                                            <option value="">-- None --</option>
-                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Salary Code:</label>
-                                        <select value={salaryCodeColumn} onChange={(e) => setSalaryCodeColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
-                                            <option value="">-- None --</option>
-                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Salary Code 2 (Rare):</label>
-                                        <select value={salaryCode2Column} onChange={(e) => setSalaryCode2Column(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
-                                            <option value="">-- None --</option>
-                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                        </select>
-                                    </div>
+                                    {appMode !== 'delete' && (
+                                        <>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-800 mb-2">Group: Default Wage Type (HourlyRate/ShiftRate):</label>
+                                                <select value={wageTypeColumn} onChange={(e) => setWageTypeColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
+                                                    <option value="">-- None --</option>
+                                                    {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-800 mb-2">Group: Default Rate:</label>
+                                                <select value={rateColumn} onChange={(e) => setRateColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
+                                                    <option value="">-- None --</option>
+                                                    {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-800 mb-2">Group: Salary Code:</label>
+                                                <select value={salaryCodeColumn} onChange={(e) => setSalaryCodeColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
+                                                    <option value="">-- None --</option>
+                                                    {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-800 mb-2">Group: Salary Code 2 (needs activation):</label>
+                                                <select value={salaryCode2Column} onChange={(e) => setSalaryCode2Column(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-medium">
+                                                    <option value="">-- None --</option>
+                                                    {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                                </select>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             </div>
 
-                            {/* Skills Card */}
+                            {/* Sections Card */}
                             <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
-                                <h3 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-200 pb-2">Skills</h3>
-                                <div className="grid md:grid-cols-2 gap-4">
+                                <div className="flex justify-between items-center mb-4 border-b border-gray-200 pb-2">
+                                    <h3 className="text-lg font-bold text-gray-900">Sections</h3>
+                                    {appMode === 'update' && (
+                                        <span className="text-xs bg-amber-100 text-amber-800 font-semibold px-2.5 py-0.5 rounded-full">
+                                            Update Mode
+                                        </span>
+                                    )}
+                                    {appMode === 'delete' && (
+                                        <span className="text-xs bg-red-100 text-red-800 font-semibold px-2.5 py-0.5 rounded-full">
+                                            Delete Mode
+                                        </span>
+                                    )}
+                                </div>
+                                <div className={`grid ${appMode === 'delete' ? 'grid-cols-1 md:grid-cols-2' : appMode === 'update' ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-3'} gap-4`}>
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Skill Name:</label>
-                                        <select value={skillNameColumn} onChange={(e) => setSkillNameColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 font-medium">
+                                        <label className="block text-sm font-bold text-gray-800 mb-1">
+                                            {appMode === 'delete' ? 'Section Name (to Delete):' : appMode === 'update' ? 'Section (Match by):' : 'Section Name:'}
+                                        </label>
+                                        <span className="block text-xs text-gray-500 mb-2">
+                                            {appMode === 'delete' ? 'Column with section names to delete' : appMode === 'update' ? 'Existing section name in Planday' : 'Section name'}
+                                        </span>
+                                        <select value={sectionNameColumn} onChange={(e) => setSectionNameColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 font-medium">
                                             <option value="">-- None --</option>
                                             {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Skill Description (Opt):</label>
-                                        <select value={skillDescColumn} onChange={(e) => setSkillDescColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 font-medium">
+                                        <label className="block text-sm font-bold text-gray-800 mb-1">
+                                            Section Department:
+                                        </label>
+                                        <span className="block text-xs text-gray-500 mb-2">
+                                            Department the section belongs to
+                                        </span>
+                                        <select value={sectionDeptColumn} onChange={(e) => setSectionDeptColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 font-medium">
                                             <option value="">-- None --</option>
                                             {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                         </select>
                                     </div>
+                                    {appMode !== 'delete' && (
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-800 mb-1">
+                                                Section Color (Opt):
+                                            </label>
+                                            <span className="block text-xs text-gray-500 mb-2">
+                                                Hex color code (e.g. #2CD08E)
+                                            </span>
+                                            <select value={sectionColorColumn} onChange={(e) => setSectionColorColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 font-medium">
+                                                <option value="">-- None --</option>
+                                                {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
+                                    {appMode === 'update' && (
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-800 mb-1 flex items-center gap-1.5">
+                                                <span>UPDATE - Section Name:</span>
+                                                <span className="text-xs font-normal text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">New Name</span>
+                                            </label>
+                                            <span className="block text-xs text-gray-500 mb-2">
+                                                New name for section (Optional)
+                                            </span>
+                                            <select value={sectionUpdateNameColumn} onChange={(e) => setSectionUpdateNameColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 font-medium">
+                                                <option value="">-- None --</option>
+                                                {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
-                            {/* Sections/Positions Card */}
+                            {/* Positions Card */}
+                            {appMode !== 'delete' && (
                             <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
-                                <h3 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-200 pb-2">Sections / Positions</h3>
+                                <h3 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-200 pb-2">Positions</h3>
                                 <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                     <div>
                                         <label className="block text-sm font-bold text-gray-800 mb-2">Position Name:</label>
@@ -2334,6 +4345,30 @@ export default function App() {
                                     </div>
                                 </div>
                             </div>
+                            )}
+
+                            {/* Skills Card */}
+                            {appMode !== 'delete' && (
+                            <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
+                                <h3 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-200 pb-2">Skills</h3>
+                                <div className="grid md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Skill Name:</label>
+                                        <select value={skillNameColumn} onChange={(e) => setSkillNameColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-800 mb-2">Skill Description (Opt):</label>
+                                        <select value={skillDescColumn} onChange={(e) => setSkillDescColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 font-medium">
+                                            <option value="">-- None --</option>
+                                            {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            )}
                         </div>
 
                         {/* Mapped Data Live Preview Table */}
@@ -2344,12 +4379,28 @@ export default function App() {
                                     <thead className="bg-gray-100 text-gray-700 uppercase text-xs font-bold border-b border-gray-200">
                                         <tr>
                                             <th className="p-3 w-12 text-center">#</th>
-                                            <th className="p-3">Department (Mapped: {deptColumn || 'None'})</th>
-                                            <th className="p-3">Group (Mapped: {groupColumn || 'None'})</th>
-                                            <th className="p-3">Skill Name (Mapped: {skillNameColumn || 'None'})</th>
-                                            <th className="p-3">Position Name (Mapped: {posNameColumn || 'None'})</th>
-                                            <th className="p-3">Position Dept (Mapped: {posDeptColumn || 'None'})</th>
-                                            <th className="p-3">Position Group (Mapped: {posGroupColumn || 'None'})</th>
+                                            <th className="p-3">{appMode === 'delete' ? 'Department to Delete' : 'Department'} (Mapped: {deptColumn || 'None'})</th>
+                                            {appMode !== 'delete' && deptUpdateNameColumn && (
+                                                <th className="p-3 text-amber-700 bg-amber-50">UPDATE - Dept Name (Mapped: {deptUpdateNameColumn})</th>
+                                            )}
+                                            {appMode !== 'delete' && deptNumberColumn && (
+                                                <th className="p-3">Dept Number (Mapped: {deptNumberColumn})</th>
+                                            )}
+                                            <th className="p-3">{appMode === 'delete' ? 'Employee Group to Delete' : 'Group'} (Mapped: {groupColumn || 'None'})</th>
+                                            {sectionNameColumn && (
+                                                <th className="p-3 text-emerald-800 bg-emerald-50/50">{appMode === 'delete' ? 'Section to Delete' : 'Section'} (Mapped: {sectionNameColumn})</th>
+                                            )}
+                                            {appMode === 'update' && sectionUpdateNameColumn && (
+                                                <th className="p-3 text-amber-700 bg-amber-50">UPDATE - Section Name (Mapped: {sectionUpdateNameColumn})</th>
+                                            )}
+                                            {appMode !== 'delete' && (
+                                                <>
+                                                    <th className="p-3">Position Name (Mapped: {posNameColumn || 'None'})</th>
+                                                    <th className="p-3">Position Dept (Mapped: {posDeptColumn || 'None'})</th>
+                                                    <th className="p-3">Position Group (Mapped: {posGroupColumn || 'None'})</th>
+                                                    <th className="p-3">Skill Name (Mapped: {skillNameColumn || 'None'})</th>
+                                                </>
+                                            )}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
@@ -2357,11 +4408,27 @@ export default function App() {
                                             <tr key={idx} className="hover:bg-gray-50/80">
                                                 <td className="p-3 text-center text-gray-400 font-mono text-xs">{idx + 1}</td>
                                                 <td className="p-3 font-medium text-gray-800">{deptColumn && row[deptColumn] ? row[deptColumn] : <span className="text-gray-300 italic">-</span>}</td>
+                                                {appMode !== 'delete' && deptUpdateNameColumn && (
+                                                    <td className="p-3 font-medium text-amber-900 bg-amber-50/50">{row[deptUpdateNameColumn] ? row[deptUpdateNameColumn] : <span className="text-gray-300 italic">-</span>}</td>
+                                                )}
+                                                {appMode !== 'delete' && deptNumberColumn && (
+                                                    <td className="p-3 font-medium text-gray-800">{row[deptNumberColumn] !== undefined && row[deptNumberColumn] !== null && String(row[deptNumberColumn]).trim() !== '' ? row[deptNumberColumn] : <span className="text-gray-300 italic">-</span>}</td>
+                                                )}
                                                 <td className="p-3 font-medium text-gray-800">{groupColumn && row[groupColumn] ? row[groupColumn] : <span className="text-gray-300 italic">-</span>}</td>
-                                                <td className="p-3 font-medium text-gray-800">{skillNameColumn && row[skillNameColumn] ? row[skillNameColumn] : <span className="text-gray-300 italic">-</span>}</td>
-                                                <td className="p-3 font-medium text-gray-800">{posNameColumn && row[posNameColumn] ? row[posNameColumn] : <span className="text-gray-300 italic">-</span>}</td>
-                                                <td className="p-3 font-medium text-gray-800">{posDeptColumn && row[posDeptColumn] ? row[posDeptColumn] : <span className="text-gray-300 italic">-</span>}</td>
-                                                <td className="p-3 font-medium text-gray-800">{posGroupColumn && row[posGroupColumn] ? row[posGroupColumn] : <span className="text-gray-300 italic">-</span>}</td>
+                                                {sectionNameColumn && (
+                                                    <td className="p-3 font-medium text-emerald-900 bg-emerald-50/30">{row[sectionNameColumn] ? row[sectionNameColumn] : <span className="text-gray-300 italic">-</span>}</td>
+                                                )}
+                                                {appMode === 'update' && sectionUpdateNameColumn && (
+                                                    <td className="p-3 font-medium text-amber-900 bg-amber-50/50">{row[sectionUpdateNameColumn] ? row[sectionUpdateNameColumn] : <span className="text-gray-300 italic">-</span>}</td>
+                                                )}
+                                                {appMode !== 'delete' && (
+                                                    <>
+                                                        <td className="p-3 font-medium text-gray-800">{posNameColumn && row[posNameColumn] ? row[posNameColumn] : <span className="text-gray-300 italic">-</span>}</td>
+                                                        <td className="p-3 font-medium text-gray-800">{posDeptColumn && row[posDeptColumn] ? row[posDeptColumn] : <span className="text-gray-300 italic">-</span>}</td>
+                                                        <td className="p-3 font-medium text-gray-800">{posGroupColumn && row[posGroupColumn] ? row[posGroupColumn] : <span className="text-gray-300 italic">-</span>}</td>
+                                                        <td className="p-3 font-medium text-gray-800">{skillNameColumn && row[skillNameColumn] ? row[skillNameColumn] : <span className="text-gray-300 italic">-</span>}</td>
+                                                    </>
+                                                )}
                                             </tr>
                                         ))}
                                     </tbody>
@@ -2378,7 +4445,7 @@ export default function App() {
                                 Back
                             </button>                            <button 
                                 onClick={appMode === 'import' || (appMode === 'update' && deleteInputMethod === 'file') ? generateReviewList : generateActionReviewList}
-                                disabled={!deptColumn && !groupColumn && !skillNameColumn && !posNameColumn}
+                                disabled={!deptColumn && !deptUpdateNameColumn && !groupColumn && !skillNameColumn && !posNameColumn && !sectionNameColumn}
                                 className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all text-sm flex items-center gap-2 disabled:opacity-50"
                             >
                                 <span>Continue to Review</span>
@@ -2466,7 +4533,7 @@ export default function App() {
                                                 <label className="block text-xs font-bold text-gray-700 mb-1">Salary Code (Optional)</label>
                                                 <input 
                                                     type="text" 
-                                                    value={item.updatePayload?.salaryCode || ''}
+                                                    value={item.updatePayload?.salaryCode || ''} 
                                                     onChange={(e) => handleUpdatePayloadChange(item.id, 'salaryCode', e.target.value)}
                                                     className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500"
                                                     placeholder="e.g. 1000"
@@ -2476,10 +4543,118 @@ export default function App() {
                                                 <label className="block text-xs font-bold text-gray-700 mb-1">Salary Code 2 <span className="font-normal text-gray-500">(If active)</span></label>
                                                 <input 
                                                     type="text" 
-                                                    value={item.updatePayload?.salaryCode2 || ''}
+                                                    value={item.updatePayload?.salaryCode2 || ''} 
                                                     onChange={(e) => handleUpdatePayloadChange(item.id, 'salaryCode2', e.target.value)}
                                                     className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500"
                                                     placeholder="e.g. 2000"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                {reviewItems.filter(i => i.type === 'section' && i.action === 'update').map(item => (
+                                    <div key={item.id} className="border border-emerald-100 bg-emerald-50/20 rounded-xl p-4 shadow-sm">
+                                        <div className="flex justify-between items-center mb-3">
+                                            <h3 className="font-bold text-emerald-900">{item.name}</h3>
+                                            {item.departmentName && (
+                                                <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-medium">
+                                                    Dept: {item.departmentName}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-700 mb-1">New Section Name</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={item.updatePayload?.name !== undefined ? item.updatePayload.name : item.name}
+                                                    onChange={(e) => handleUpdatePayloadChange(item.id, 'name', e.target.value)}
+                                                    className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-emerald-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-700 mb-1">New Color (Hex)</label>
+                                                <div className="flex items-center gap-2">
+                                                    <input 
+                                                        type="color" 
+                                                        value={item.updatePayload?.color && /^#[0-9A-Fa-f]{6}$/.test(item.updatePayload.color) ? item.updatePayload.color : '#2CD08E'}
+                                                        onChange={(e) => handleUpdatePayloadChange(item.id, 'color', e.target.value)}
+                                                        className="w-9 h-9 p-0 border border-gray-300 rounded-lg cursor-pointer bg-white"
+                                                    />
+                                                    <input 
+                                                        type="text" 
+                                                        value={item.updatePayload?.color !== undefined ? item.updatePayload.color : ''}
+                                                        onChange={(e) => handleUpdatePayloadChange(item.id, 'color', e.target.value)}
+                                                        placeholder="#2CD08E"
+                                                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-emerald-500 font-mono"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                {reviewItems.filter(i => i.type === 'position' && i.action === 'update').map(item => (
+                                    <div key={item.id} className="border border-teal-100 bg-teal-50/20 rounded-xl p-4 shadow-sm">
+                                        <div className="flex justify-between items-center mb-3">
+                                            <h3 className="font-bold text-teal-900">{item.name}</h3>
+                                            {item.updatePayload?.departmentName && (
+                                                <span className="text-xs bg-teal-100 text-teal-800 px-2 py-0.5 rounded font-medium">
+                                                    Dept: {item.updatePayload.departmentName}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-700 mb-1">New Position Name</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={item.updatePayload?.name !== undefined ? item.updatePayload.name : item.name}
+                                                    onChange={(e) => handleUpdatePayloadChange(item.id, 'name', e.target.value)}
+                                                    className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-700 mb-1">New Color (Hex)</label>
+                                                <div className="flex items-center gap-2">
+                                                    <input 
+                                                        type="color" 
+                                                        value={item.updatePayload?.color && /^#[0-9A-Fa-f]{6}$/.test(item.updatePayload.color) ? item.updatePayload.color : '#0F766E'}
+                                                        onChange={(e) => handleUpdatePayloadChange(item.id, 'color', e.target.value)}
+                                                        className="w-9 h-9 p-0 border border-gray-300 rounded-lg cursor-pointer bg-white"
+                                                    />
+                                                    <input 
+                                                        type="text" 
+                                                        value={item.updatePayload?.color !== undefined ? item.updatePayload.color : ''}
+                                                        onChange={(e) => handleUpdatePayloadChange(item.id, 'color', e.target.value)}
+                                                        placeholder="#0F766E"
+                                                        className="flex-1 p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500 font-mono"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                {reviewItems.filter(i => i.type === 'skill' && i.action === 'update').map(item => (
+                                    <div key={item.id} className="border border-yellow-200 bg-yellow-50/20 rounded-xl p-4 shadow-sm">
+                                        <h3 className="font-bold text-yellow-900 mb-3">{item.name}</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-700 mb-1">New Skill Name</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={item.updatePayload?.name !== undefined ? item.updatePayload.name : item.name}
+                                                    onChange={(e) => handleUpdatePayloadChange(item.id, 'name', e.target.value)}
+                                                    className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-yellow-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-700 mb-1">Description</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={item.updatePayload?.description !== undefined ? item.updatePayload.description : ''}
+                                                    onChange={(e) => handleUpdatePayloadChange(item.id, 'description', e.target.value)}
+                                                    placeholder="Skill description..."
+                                                    className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-yellow-500"
                                                 />
                                             </div>
                                         </div>
@@ -2533,43 +4708,13 @@ export default function App() {
                         )}
 
                         {/* Overview Stats */}
-                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
-                                <span className="block text-xs font-bold text-gray-500 uppercase tracking-wider">New Departments</span>
-                                <span className="text-2xl font-extrabold text-blue-600 mt-1 block">{reviewStats.toCreateDept}</span>
-                            </div>
-
-                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
-                                <span className="block text-xs font-bold text-gray-500 uppercase tracking-wider">New Employee Groups</span>
-                                <span className="text-2xl font-extrabold text-indigo-600 mt-1 block">{reviewStats.toCreateGroup}</span>
-                            </div>
-
-                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
-                                <span className="block text-xs font-bold text-gray-500 uppercase tracking-wider">New Skills</span>
-                                <span className="text-2xl font-extrabold text-teal-600 mt-1 block">{reviewStats.toCreateSkill}</span>
-                            </div>
-
-                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
-                                <span className="block text-xs font-bold text-gray-500 uppercase tracking-wider">New Positions</span>
-                                <span className="text-2xl font-extrabold text-purple-600 mt-1 block">{reviewStats.toCreatePosition}</span>
-                            </div>
-
-                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
-                                <span className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Duplicates Skipped</span>
-                                <span className="text-2xl font-extrabold text-amber-600 mt-1 block">{reviewStats.skipped}</span>
-                            </div>
-
-                            {appMode !== 'update' ? (
-                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
-                                    <span className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Items To Delete</span>
-                                    <span className="text-2xl font-extrabold text-red-600 mt-1 block">{reviewStats.toDelete}</span>
+                        <div className={`grid grid-cols-2 sm:grid-cols-3 ${overviewTiles.length > 6 ? 'lg:grid-cols-4 xl:grid-cols-7' : 'lg:grid-cols-6'} gap-4`}>
+                            {overviewTiles.map((tile, idx) => (
+                                <div key={idx} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
+                                    <span className="block text-xs font-bold text-gray-500 uppercase tracking-wider">{tile.label}</span>
+                                    <span className={`text-2xl font-extrabold ${tile.color} mt-1 block`}>{tile.count}</span>
                                 </div>
-                            ) : (
-                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
-                                    <span className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Items To Update</span>
-                                    <span className="text-2xl font-extrabold text-amber-600 mt-1 block">{reviewStats.toUpdate}</span>
-                                </div>
-                            )}
+                            ))}
                         </div>
 
                         {/* Add Custom Quick Item */}
@@ -2579,7 +4724,7 @@ export default function App() {
                                 <input 
                                     type="text" 
                                     value={newItemName} 
-                                    onChange={(e) => setNewItemName(e.target.value)}
+                                    onChange={(e) => setNewItemName(e.target.value)} 
                                     placeholder="Enter name..."
                                     className="flex-1 min-w-[200px] px-3.5 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                                 />
@@ -2590,7 +4735,37 @@ export default function App() {
                                 >
                                     <option value="department">Department</option>
                                     <option value="employee_group">Employee Group</option>
+                                    <option value="section">Section</option>
                                 </select>
+                                {newItemType === 'section' && (
+                                    <>
+                                        <select
+                                            value={newItemDeptId}
+                                            onChange={(e) => setNewItemDeptId(e.target.value ? Number(e.target.value) : '')}
+                                            className="px-3.5 py-2 border border-gray-300 rounded-xl text-sm bg-white font-medium"
+                                        >
+                                            <option value="">-- Select Department --</option>
+                                            {currentStructure.departments.map(d => (
+                                                <option key={d.id} value={d.id}>{d.name}</option>
+                                            ))}
+                                        </select>
+                                        <div className="flex items-center gap-1.5">
+                                            <input 
+                                                type="color" 
+                                                value={newItemColor && /^#[0-9A-Fa-f]{6}$/.test(newItemColor) ? newItemColor : '#2CD08E'} 
+                                                onChange={(e) => setNewItemColor(e.target.value)}
+                                                className="w-9 h-9 p-0 border border-gray-300 rounded-lg cursor-pointer bg-white"
+                                            />
+                                            <input 
+                                                type="text" 
+                                                value={newItemColor} 
+                                                onChange={(e) => setNewItemColor(e.target.value)}
+                                                placeholder="#2CD08E"
+                                                className="w-24 px-2 py-2 border border-gray-300 rounded-xl text-xs bg-white font-mono"
+                                            />
+                                        </div>
+                                    </>
+                                )}
                                 <button 
                                     onClick={handleAddCustomReviewItem}
                                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm flex items-center gap-1 shadow-sm"
@@ -2611,12 +4786,14 @@ export default function App() {
                                     >
                                         All ({reviewItems.length})
                                     </button>
-                                    <button 
-                                        onClick={() => setReviewTab('create')}
-                                        className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${reviewTab === 'create' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                                    >
-                                        To Create ({reviewStats.toCreateDept + reviewStats.toCreateGroup})
-                                    </button>
+                                    {reviewStats.toCreate > 0 && (
+                                        <button 
+                                            onClick={() => setReviewTab('create')}
+                                            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${reviewTab === 'create' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                        >
+                                            To Create ({reviewStats.toCreate})
+                                        </button>
+                                    )}
                                     <button 
                                         onClick={() => setReviewTab('skip')}
                                         className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${reviewTab === 'skip' ? 'bg-amber-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
@@ -2671,11 +4848,13 @@ export default function App() {
                                                     <td className="p-4">
                                                         <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
                                                             item.type === 'department' ? 'bg-blue-100 text-blue-800' : 
-                                                            item.type === 'employee_group' ? 'bg-indigo-100 text-indigo-800' :
-                                                            item.type === 'skill' ? 'bg-teal-100 text-teal-800' :
-                                                            'bg-purple-100 text-purple-800'
+                                                            item.type === 'employee_group' ? 'bg-purple-100 text-purple-800' :
+                                                            item.type === 'section' ? 'bg-gray-200 text-gray-800' :
+                                                            item.type === 'position' ? 'bg-teal-100 text-teal-800' :
+                                                            'bg-yellow-100 text-yellow-900 border border-yellow-300'
                                                         }`}>
                                                             {item.type === 'department' ? 'Department' : 
+                                                             item.type === 'section' ? 'Section' :
                                                              item.type === 'employee_group' ? 'Employee Group' :
                                                              item.type === 'skill' ? 'Skill' : 'Position'}
                                                         </span>
@@ -2704,8 +4883,33 @@ export default function App() {
                                                         )}
                                                     </td>
                                                     <td className="p-4 text-xs text-gray-600">
-                                                        {item.type === 'department' && (item.updatePayload?.number || item.number) && (
-                                                            <div><span className="font-semibold text-gray-800">Number:</span> {item.updatePayload?.number || item.number}</div>
+                                                        {item.type === 'department' && (
+                                                            <div className="space-y-1">
+                                                                {item.action === 'update' && item.updatePayload?.name && item.updatePayload.name !== item.name && (
+                                                                    <div><span className="font-semibold text-amber-800">New Name:</span> <span className="font-bold text-gray-900">{item.updatePayload.name}</span></div>
+                                                                )}
+                                                                {item.action === 'update' && item.updatePayload?.number !== undefined && item.updatePayload.number !== (item.number || null) && (
+                                                                    <div><span className="font-semibold text-amber-800">New Number:</span> <span className="font-bold text-gray-900">{item.updatePayload.number || '<None>'}</span></div>
+                                                                )}
+                                                                {!(item.action === 'update' && (item.updatePayload?.name !== item.name || (item.updatePayload?.number !== undefined && item.updatePayload.number !== (item.number || null)))) && (item.updatePayload?.number || item.number) && (
+                                                                    <div><span className="font-semibold text-gray-800">Number:</span> {item.updatePayload?.number || item.number}</div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {item.type === 'section' && (
+                                                            <div className="space-y-1">
+                                                                {item.departmentName && <div><span className="font-semibold text-gray-800">Dept:</span> {item.departmentName}</div>}
+                                                                {item.action === 'update' && item.updatePayload?.name && item.updatePayload.name !== item.name && (
+                                                                    <div><span className="font-semibold text-amber-800">New Name:</span> <span className="font-bold text-gray-900">{item.updatePayload.name}</span></div>
+                                                                )}
+                                                                {item.updatePayload?.color && (
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <span className="font-semibold text-gray-800">Color:</span>
+                                                                        <span className="w-3 h-3 rounded-full inline-block border border-gray-300" style={{ backgroundColor: item.updatePayload.color }}></span>
+                                                                        <span className="font-mono text-xs">{item.updatePayload.color}</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         )}
                                                         {item.type === 'employee_group' && item.updatePayload ? (
                                                             <div className="space-y-1">
@@ -2727,7 +4931,8 @@ export default function App() {
                                                                 {item.updatePayload.revenueUnitName && <div><span className="font-semibold text-gray-800">Rev Unit:</span> {item.updatePayload.revenueUnitName}</div>}
                                                             </div>
                                                         )}
-                                                        {(item.type === 'department' && !(item.updatePayload?.number || item.number)) || 
+                                                        {(item.type === 'department' && !(item.updatePayload?.name !== item.name || item.updatePayload?.number || item.number)) || 
+                                                         (item.type === 'section' && !(item.departmentName || item.updatePayload?.name || item.updatePayload?.color)) ||
                                                          (item.type === 'employee_group' && !item.updatePayload) ||
                                                          (item.type === 'skill' && !item.updatePayload?.description) ? (
                                                             <span className="italic text-gray-400">None</span>
@@ -2840,9 +5045,7 @@ export default function App() {
                         <div className="flex justify-between items-center pt-4">
                             <button 
                                 onClick={() => {
-                                    if (appMode === 'delete' && deleteInputMethod !== 'file') {
-                                        setStep(1);
-                                    } else if (appMode === 'import' && importInputMethod !== 'file') {
+                                    if (appMode === 'delete' && deleteInputMethod === 'selection') {
                                         setStep(1);
                                     } else {
                                         setStep(2);
@@ -2850,7 +5053,7 @@ export default function App() {
                                 }}
                                 className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-colors text-sm"
                             >
-                                {((appMode === 'delete' && deleteInputMethod !== 'file') || (appMode === 'import' && importInputMethod !== 'file')) ? 'Back to Selection' : 'Back to Mapping / Config'}
+                                {(appMode === 'delete' && deleteInputMethod === 'selection') ? 'Back to Selection' : 'Back to Mapping / Config'}
                             </button>
 
                             <button 
@@ -2877,7 +5080,7 @@ export default function App() {
                         <div>
                             <h2 className="text-2xl font-bold text-gray-900 mb-2">{appMode === 'delete' ? 'Bulk Deletion Execution' : appMode === 'update' ? 'Bulk Update Execution' : 'Structure Import Execution'}</h2>
                             <p className="text-sm text-gray-600">
-                                {appMode === 'delete' ? 'Deleting selected Departments and Employee Groups in your Planday portal...' : appMode === 'update' ? 'Updating selected items in your Planday portal...' : 'Creating new Departments and Employee Groups in your Planday portal...'}
+                                {appMode === 'delete' ? 'Deleting selected Departments, Employee Groups, Sections, Positions, and Skills in your Planday portal...' : appMode === 'update' ? 'Updating selected items in your Planday portal...' : 'Creating new Departments, Employee Groups, Sections, Positions, and Skills in your Planday portal...'}
                             </p>
                         </div>
 
@@ -2926,13 +5129,20 @@ export default function App() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
-                                        {reviewItems.map((item, idx) => (
+                                        {[...reviewItems].sort((a, b) => {
+                                            const orderA = TYPE_ORDER[a.type] || 99;
+                                            const orderB = TYPE_ORDER[b.type] || 99;
+                                            if (orderA !== orderB) return orderA - orderB;
+                                            return a.name.localeCompare(b.name);
+                                        }).map((item, idx) => (
                                             <tr key={idx} className="hover:bg-gray-50">
                                                 <td className="p-3 text-center text-gray-400 font-mono text-xs">{idx + 1}</td>
                                                 <td className="p-3 font-medium text-xs">
                                                     {item.type === 'department' ? 'Department' : 
                                                      item.type === 'employee_group' ? 'Employee Group' :
-                                                     item.type === 'skill' ? 'Skill' : 'Position'}
+                                                     item.type === 'section' ? 'Section' :
+                                                     item.type === 'position' ? 'Position' :
+                                                     item.type === 'skill' ? 'Skill' : 'Item'}
                                                 </td>
                                                 <td className="p-3 font-bold text-gray-900">{item.name}</td>
                                                 <td className="p-3 text-xs">
@@ -2959,7 +5169,18 @@ export default function App() {
                         {executionCompleted && (
                             <div className="flex justify-end pt-4 border-t border-gray-100">
                                 <button 
-                                    onClick={() => setStep(1)}
+                                    onClick={() => { 
+                                        setDeleteSelectedDepts(new Set());
+                                        setDeleteSelectedGroups(new Set());
+                                        setDeleteSelectedSections(new Set());
+                                        setDeleteSelectedPositions(new Set());
+                                        setDeleteSelectedSkills(new Set());
+                                        setReviewItems([]);
+                                        setExecutionCompleted(false);
+                                        setStep(1); 
+                                        setDeleteInputMethod('file'); 
+                                        handleManualRefresh();
+                                    }}
                                     className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all text-sm flex items-center gap-2"
                                 >
                                     <RefreshIcon className="w-4 h-4" /> {appMode === 'delete' ? 'Start New Bulk Delete' : appMode === 'update' ? 'Start New Bulk Update' : 'Start New Import'}
@@ -2970,15 +5191,28 @@ export default function App() {
                 )}
             </main>
 
-            {/* Footer */}
-            <footer className="py-8 text-center text-gray-400 text-xs border-t border-gray-200 mt-auto bg-white">
-                <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-2">
-                    <div className="flex items-center gap-1">
-                        <span className="font-semibold text-gray-600">Planday Structure Builder (Beta)</span>
-                        <span>• Client-Side Processing</span>
-                    </div>
-                    <div className="text-gray-400">
-                        Made with ❤️ for Planday Community
+            {/* Footer / App Info */}
+            <footer className="py-6 text-center mt-auto">
+                {/* 1. Relative wrapper with 'group' to listen for hover */}
+                <div className="relative group inline-flex items-center gap-1 cursor-help">
+                    <span className="text-gray-500 text-sm font-medium">App Info</span>
+                    
+                    {/* 2. Icon changes color when hovering the group */}
+                    <InfoIcon className="h-4 w-4 text-gray-400 group-hover:text-blue-500 transition-colors" />
+
+                    {/* 3. The Tooltip Popover (appears above on hover) */}
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 w-80 p-4 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-center leading-relaxed">
+                        <p className="mb-2">
+                            <strong>Client-Side Processing & Secure:</strong> This app is a React-based JavaScript web application that runs entirely in your browser.
+                        </p>
+                        <p className="mb-3">
+                            Your Excel files and employee data are processed locally in your browser and are never sent to any third‑party servers; they are only transmitted directly to the official <a href="https://openapi.planday.com/" target="_blank" rel="noopener noreferrer" className="text-blue-300 hover:text-blue-200 underline">Planday Open API</a> over a secure encrypted connection (HTTPS).
+                        </p>
+                        <p className="text-gray-400 border-t border-gray-700 pt-2 mt-2">Version 1.2</p>
+                        <p className="text-gray-400">Made with ❤️ by the Community</p>
+
+                        {/* Downward-pointing arrow triangle */}
+                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
                     </div>
                 </div>
             </footer>
@@ -3005,10 +5239,35 @@ export default function App() {
                     <div className="space-y-2 text-sm">
                         <p>{appMode === 'delete' ? "You are about to execute the following DELETIONS in Planday. This is irreversible:" : appMode === 'update' ? "You are about to UPDATE the following items in Planday:" : "You are about to execute the following structure changes in Planday:"}</p>
                         <ul className="list-disc pl-5 font-semibold text-gray-800 space-y-1">
-                            {reviewStats.toDelete > 0 && <li className="text-red-600">Delete {reviewStats.toDelete} existing structure items</li>}
-                            {reviewStats.toCreateDept > 0 && <li>Create {reviewStats.toCreateDept} new Departments</li>}
-                            {reviewStats.toCreateGroup > 0 && <li>Create {reviewStats.toCreateGroup} new Employee Groups</li>}
-                            {reviewStats.toUpdate > 0 && <li className="text-amber-600">Update {reviewStats.toUpdate} existing items</li>}
+                            {appMode === 'delete' ? (
+                                <>
+                                    {reviewStats.toDeleteDept > 0 && <li className="text-red-600">Delete {reviewStats.toDeleteDept} Departments</li>}
+                                    {reviewStats.toDeleteGroup > 0 && <li className="text-red-600">Delete {reviewStats.toDeleteGroup} Employee Groups</li>}
+                                    {reviewStats.toDeleteSection > 0 && <li className="text-red-600">Delete {reviewStats.toDeleteSection} Sections</li>}
+                                    {reviewStats.toDeletePosition > 0 && <li className="text-red-600">Delete {reviewStats.toDeletePosition} Positions</li>}
+                                    {reviewStats.toDeleteSkill > 0 && <li className="text-red-600">Delete {reviewStats.toDeleteSkill} Skills</li>}
+                                    {reviewStats.toDelete === 0 && <li className="text-gray-500">No items selected to delete</li>}
+                                </>
+                            ) : appMode === 'update' ? (
+                                <>
+                                    {reviewStats.toUpdateDept > 0 && <li className="text-amber-600">Update {reviewStats.toUpdateDept} Departments</li>}
+                                    {reviewStats.toUpdateGroup > 0 && <li className="text-amber-600">Update {reviewStats.toUpdateGroup} Employee Groups</li>}
+                                    {reviewStats.toUpdateSection > 0 && <li className="text-amber-600">Update {reviewStats.toUpdateSection} Sections</li>}
+                                    {reviewStats.toUpdatePosition > 0 && <li className="text-amber-600">Update {reviewStats.toUpdatePosition} Positions</li>}
+                                    {reviewStats.toUpdateSkill > 0 && <li className="text-amber-600">Update {reviewStats.toUpdateSkill} Skills</li>}
+                                    {reviewStats.toUpdate === 0 && <li className="text-gray-500">No items scheduled to update</li>}
+                                </>
+                            ) : (
+                                <>
+                                    {reviewStats.toCreateDept > 0 && <li>Create {reviewStats.toCreateDept} new Departments</li>}
+                                    {reviewStats.toCreateGroup > 0 && <li>Create {reviewStats.toCreateGroup} new Employee Groups</li>}
+                                    {reviewStats.toCreateSection > 0 && <li>Create {reviewStats.toCreateSection} new Sections</li>}
+                                    {reviewStats.toCreatePosition > 0 && <li>Create {reviewStats.toCreatePosition} new Positions</li>}
+                                    {reviewStats.toCreateSkill > 0 && <li>Create {reviewStats.toCreateSkill} new Skills</li>}
+                                    {reviewStats.toUpdate > 0 && <li className="text-amber-600">Update {reviewStats.toUpdate} existing items</li>}
+                                    {reviewStats.toDelete > 0 && <li className="text-red-600">Delete {reviewStats.toDelete} items</li>}
+                                </>
+                            )}
                             {reviewStats.skipped > 0 && <li className="text-gray-500">Skip {reviewStats.skipped} items</li>}
                         </ul>
                         {appMode === 'delete' && <p className="mt-4 text-red-600 font-bold">Are you sure you want to permanently delete these items?</p>}

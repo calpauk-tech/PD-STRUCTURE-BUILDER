@@ -1,6 +1,7 @@
-import { PlandayApiCredentials, Department, EmployeeGroup, Skill, RevenueUnit, Position } from '../types';
+import { PlandayApiCredentials, Department, EmployeeGroup, Skill, RevenueUnit, Position, Section } from '../types';
 
 const AUTH_URL = 'https://id.planday.com/connect/token';
+const REVOCATION_URL = 'https://id.planday.com/connect/revocation';
 const API_BASE_URL = 'https://openapi.planday.com';
 
 let credentials_internal: PlandayApiCredentials | null = null;
@@ -20,6 +21,42 @@ export function resetService() {
     credentials_internal = null;
     accessToken = null;
     tokenExpiry = null;
+}
+
+export async function revokeToken(): Promise<void> {
+    try {
+        let clientId = credentials_internal?.clientId;
+        let refreshToken = credentials_internal?.refreshToken;
+
+        if (!refreshToken) {
+            const saved = sessionStorage.getItem('plandayCredentials');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    clientId = clientId || parsed.clientId;
+                    refreshToken = parsed.refreshToken;
+                } catch { }
+            }
+        }
+
+        if (clientId && refreshToken) {
+            const payload = new URLSearchParams({
+                'client_id': clientId,
+                'token': refreshToken,
+                'token_type_hint': 'refresh_token',
+            });
+
+            await fetch(REVOCATION_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: payload.toString(),
+            });
+        }
+    } catch (err) {
+        console.warn('Failed to revoke token with Planday:', err);
+    } finally {
+        resetService();
+    }
 }
 
 async function wait(ms: number) {
@@ -79,13 +116,16 @@ async function fetchWithAuth(url: string, options: RequestInit = { method: 'GET'
 
     const token = await getAccessToken();
     const headers = {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
         ...options.headers,
         'Authorization': `Bearer ${token}`,
         'X-ClientId': credentials_internal.clientId,
     };
 
     try {
-        const response = await fetch(url, { ...options, headers });
+        const response = await fetch(url, { ...options, headers, cache: 'no-store' });
 
         // Handle Rate Limiting (429)
         if (response.status === 429) {
@@ -164,7 +204,8 @@ export async function fetchPaginatedData(endpoint: string): Promise<any[]> {
         
         const response = await fetchWithAuth(url);
         if (!response.ok) throw new Error(`Failed to fetch ${endpoint}: ${await response.text()}`);
-        const result = await response.json();
+        const text = await response.text();
+        const result = safeJsonParse(text);
 
         let items = [];
         if (Array.isArray(result)) {
@@ -185,9 +226,22 @@ export async function fetchPaginatedData(endpoint: string): Promise<any[]> {
     return allData;
 }
 
+function safeJsonParse(text: string): any {
+    if (!text || !text.trim()) return null;
+    try {
+        return JSON.parse(text);
+    } catch {
+        return null;
+    }
+}
+
 function parseError(text: string): string {
     try {
-        const json = JSON.parse(text);
+        const json = safeJsonParse(text);
+        if (!json) {
+            if (text.toLowerCase().includes('<!doctype html>')) return 'Server returned HTML response.';
+            return text.substring(0, 300);
+        }
         const parts: string[] = [];
 
         if (json.modelState) {
@@ -254,7 +308,8 @@ export async function createDepartment(name: string, number: string | null = nul
 
     const text = await response.text();
     const extractedId = extractIdFromLocation(response);
-    const result = text ? JSON.parse(text) : { id: extractedId };
+    const parsed = safeJsonParse(text);
+    const result = parsed || { id: extractedId };
     // Planday skills API uses skillId in responses, let's normalise it
     if (result.skillId && !result.id) result.id = result.skillId;
     if (result.data && result.data.skillId && !result.data.id) result.data.id = result.data.skillId;
@@ -271,8 +326,12 @@ export async function updateDepartment(id: number, name: string, number: string 
         const errText = await response.text();
         throw new Error(`${response.status}: ${parseError(errText)}`);
     }
-    const result = await response.json();
-    return result.data || result;
+    const text = await response.text();
+    const parsed = safeJsonParse(text);
+    if (parsed) {
+        return parsed.data || parsed;
+    }
+    return { id, name, number: number || null };
 }
 
 export async function deleteDepartment(id: number): Promise<void> {
@@ -298,7 +357,8 @@ export async function fetchEmployeeGroupDefaultRates(): Promise<any[]> {
         if (response.status === 404) return []; // In case it's not available
         throw new Error(`Failed to fetch default rates: ${await response.text()}`);
     }
-    const result = await response.json();
+    const text = await response.text();
+    const result = safeJsonParse(text) || [];
     return Array.isArray(result) ? result : (result.data || []);
 }
 
@@ -316,7 +376,8 @@ export async function createEmployeeGroup(name: string): Promise<EmployeeGroup> 
 
     const text = await response.text();
     const extractedId = extractIdFromLocation(response);
-    const result = text ? JSON.parse(text) : { id: extractedId };
+    const parsed = safeJsonParse(text);
+    const result = parsed || { id: extractedId };
     // Planday skills API uses skillId in responses, let's normalise it
     if (result.skillId && !result.id) result.id = result.skillId;
     if (result.data && result.data.skillId && !result.data.id) result.data.id = result.data.skillId;
@@ -367,11 +428,34 @@ export async function deleteEmployeeGroup(id: number): Promise<void> {
 // --- Planday Skills API ---
 
 export async function fetchSkills(): Promise<Skill[]> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/hr/v1.0/skills`);
+        if (response.ok) {
+            const text = await response.text();
+            const result = safeJsonParse(text);
+            const raw = Array.isArray(result) ? result : (result?.data && Array.isArray(result.data) ? result.data : null);
+            if (raw) {
+                return raw
+                    .filter((item: any) => !item.isDeleted && item.status !== 'Deleted' && item.isActive !== false)
+                    .map((item: any) => ({
+                        ...item,
+                        id: item.id || item.skillId || item.SkillId,
+                        name: item.name || item.title || ''
+                    }));
+            }
+        }
+    } catch (e) {
+        console.warn("Direct fetch of /hr/v1.0/skills failed, trying paginated fallback:", e);
+    }
+
     const data = await fetchPaginatedData('/hr/v1.0/skills');
-    return data.map((item: any) => ({
-        ...item,
-        id: item.id || item.skillId || item.SkillId
-    }));
+    return data
+        .filter((item: any) => !item.isDeleted && item.status !== 'Deleted' && item.isActive !== false)
+        .map((item: any) => ({
+            ...item,
+            id: item.id || item.skillId || item.SkillId,
+            name: item.name || item.title || ''
+        }));
 }
 
 export async function createSkill(name: string, description: string = ''): Promise<Skill> {
@@ -388,7 +472,8 @@ export async function createSkill(name: string, description: string = ''): Promi
 
     const text = await response.text();
     const extractedId = extractIdFromLocation(response);
-    const result = text ? JSON.parse(text) : { id: extractedId };
+    const parsed = safeJsonParse(text);
+    const result = parsed || { id: extractedId };
     // Planday skills API uses skillId in responses, let's normalise it
     if (result.skillId && !result.id) result.id = result.skillId;
     if (result.data && result.data.skillId && !result.data.id) result.data.id = result.data.skillId;
@@ -402,6 +487,102 @@ export async function fetchRevenueUnits(): Promise<RevenueUnit[]> {
 }
 
 // --- Planday Positions API ---
+
+export async function fetchPositionById(positionId: number): Promise<Position> {
+    const response = await fetchWithAuth(`${API_BASE_URL}/scheduling/v1.0/positions/${positionId}`);
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`${response.status}: ${parseError(errText)}`);
+    }
+    const text = await response.text();
+    const parsed = safeJsonParse(text);
+    const data = parsed?.data || parsed;
+    return {
+        ...data,
+        id: data.id !== undefined ? data.id : (data.positionId !== undefined ? data.positionId : positionId),
+        name: data.name || data.title || '',
+        startDate: data.startDate || data.StartDate || undefined,
+        endDate: data.endDate || data.EndDate || undefined,
+        validFrom: data.validFrom || data.startDate || data.StartDate || undefined,
+        validTo: data.validTo || data.endDate || data.EndDate || undefined,
+        isActive: data.isActive !== undefined ? data.isActive : (data.IsActive !== undefined ? data.IsActive : undefined),
+        departmentId: data.departmentId !== undefined ? data.departmentId : (data.DepartmentId !== undefined ? data.DepartmentId : undefined),
+        sectionId: data.sectionId !== undefined ? data.sectionId : (data.SectionId !== undefined ? data.SectionId : undefined),
+        employeeGroupId: data.employeeGroupId !== undefined ? data.employeeGroupId : (data.EmployeeGroupId !== undefined ? data.EmployeeGroupId : undefined),
+        affectRevenue: data.affectRevenue !== undefined ? data.affectRevenue : (data.AffectRevenue !== undefined ? data.AffectRevenue : undefined),
+        revenueUnitId: data.revenueUnitId !== undefined ? data.revenueUnitId : (data.RevenueUnitId !== undefined ? data.RevenueUnitId : (data.revenueUnit?.id || undefined)),
+        skillIds: Array.isArray(data.skillIds) ? data.skillIds : (Array.isArray(data.SkillIds) ? data.SkillIds : [])
+    };
+}
+
+export async function fetchPositions(skillsOrHasSkills?: boolean | Skill[] | number): Promise<Position[]> {
+    const rawPositions = await fetchPaginatedData('/scheduling/v1.0/positions');
+    const basePositions: Position[] = rawPositions.map((p: any) => ({
+        ...p,
+        id: p.id !== undefined ? p.id : (p.positionId !== undefined ? p.positionId : 0),
+        name: p.name || p.title || '',
+        departmentId: p.departmentId !== undefined ? p.departmentId : (p.DepartmentId !== undefined ? p.DepartmentId : undefined),
+        sectionId: p.sectionId !== undefined ? p.sectionId : (p.SectionId !== undefined ? p.SectionId : undefined),
+        employeeGroupId: p.employeeGroupId !== undefined ? p.employeeGroupId : (p.EmployeeGroupId !== undefined ? p.EmployeeGroupId : undefined),
+        startDate: p.startDate || p.StartDate || undefined,
+        endDate: p.endDate || p.EndDate || undefined,
+        validFrom: p.validFrom || p.startDate || p.StartDate || undefined,
+        validTo: p.validTo || p.endDate || p.EndDate || undefined,
+        isActive: p.isActive !== undefined ? p.isActive : (p.IsActive !== undefined ? p.IsActive : undefined),
+        affectRevenue: p.affectRevenue !== undefined ? p.affectRevenue : (p.AffectRevenue !== undefined ? p.AffectRevenue : undefined),
+        revenueUnitId: p.revenueUnitId !== undefined ? p.revenueUnitId : (p.RevenueUnitId !== undefined ? p.RevenueUnitId : (p.revenueUnit?.id || undefined)),
+        skillIds: Array.isArray(p.skillIds) ? p.skillIds : (Array.isArray(p.SkillIds) ? p.SkillIds : [])
+    }));
+
+    // If there are any skills created in the portal (minimum 1), the app will have to
+    // use GET /scheduling/v1.0/positions/{positionId} when looking up positions in order
+    // to check if the position has any skills assigned ("skillIds").
+    let hasSkills = false;
+    if (typeof skillsOrHasSkills === 'boolean') {
+        hasSkills = skillsOrHasSkills;
+    } else if (Array.isArray(skillsOrHasSkills)) {
+        hasSkills = skillsOrHasSkills.length > 0;
+    } else if (typeof skillsOrHasSkills === 'number') {
+        hasSkills = skillsOrHasSkills > 0;
+    } else {
+        try {
+            const portalSkills = await fetchSkills();
+            hasSkills = Boolean(portalSkills && portalSkills.length > 0);
+        } catch {
+            hasSkills = false;
+        }
+    }
+
+    if (hasSkills && basePositions.length > 0) {
+        const batchSize = 6;
+        const detailedPositions: Position[] = [];
+        for (let i = 0; i < basePositions.length; i += batchSize) {
+            const chunk = basePositions.slice(i, i + batchSize);
+            const chunkResults = await Promise.all(
+                chunk.map(async (pos) => {
+                    if (!pos.id) return pos;
+                    try {
+                        const detail = await fetchPositionById(pos.id);
+                        return {
+                            ...pos,
+                            ...detail,
+                            affectRevenue: detail.affectRevenue !== undefined ? detail.affectRevenue : pos.affectRevenue,
+                            revenueUnitId: detail.revenueUnitId !== undefined ? detail.revenueUnitId : pos.revenueUnitId,
+                            skillIds: Array.isArray(detail.skillIds) ? detail.skillIds : []
+                        };
+                    } catch (err) {
+                        console.warn(`Could not lookup position ${pos.id} for skills:`, err);
+                        return pos;
+                    }
+                })
+            );
+            detailedPositions.push(...chunkResults);
+        }
+        return detailedPositions;
+    }
+
+    return basePositions;
+}
 
 export async function createPosition(payload: any): Promise<Position> {
     const response = await fetchWithAuth(`${API_BASE_URL}/scheduling/v1.0/positions`, {
@@ -417,7 +598,8 @@ export async function createPosition(payload: any): Promise<Position> {
 
     const text = await response.text();
     const extractedId = extractIdFromLocation(response);
-    const result = text ? JSON.parse(text) : { id: extractedId };
+    const parsed = safeJsonParse(text);
+    const result = parsed || { id: extractedId };
     // Planday skills API uses skillId in responses, let's normalise it
     if (result.skillId && !result.id) result.id = result.skillId;
     if (result.data && result.data.skillId && !result.data.id) result.data.id = result.data.skillId;
@@ -427,6 +609,190 @@ export async function createPosition(payload: any): Promise<Position> {
 export async function fetchPortalInfo(): Promise<any> {
     const response = await fetchWithAuth(`${API_BASE_URL}/portal/v1.0/info`);
     if (!response.ok) return null;
-    const json = await response.json();
-    return json.data;
+    const text = await response.text();
+    const parsed = safeJsonParse(text);
+    return parsed ? (parsed.data || parsed) : null;
 }
+
+// --- Planday Sections API ---
+
+export async function fetchSections(departmentId?: number): Promise<Section[]> {
+    const endpoint = departmentId !== undefined 
+        ? `/scheduling/v1.0/sections?departmentId=${departmentId}` 
+        : `/scheduling/v1.0/sections`;
+    const data = await fetchPaginatedData(endpoint);
+    return data.map((item: any) => ({
+        id: item.id !== undefined ? item.id : (item.sectionId !== undefined ? item.sectionId : 0),
+        name: item.name || '',
+        departmentId: item.departmentId !== undefined ? item.departmentId : (departmentId || 0),
+        color: item.color || null
+    }));
+}
+
+export async function fetchAllSections(departments?: Department[]): Promise<Section[]> {
+    // If departments provided, try fetching per department to be guaranteed complete data
+    if (departments && departments.length > 0) {
+        try {
+            // First attempt: try general endpoint if it returns everything
+            const general = await fetchSections().catch(() => null);
+            if (general && general.length > 0) {
+                return general;
+            }
+        } catch { }
+
+        // Fallback or full coverage: fetch for each department in parallel
+        const results = await Promise.all(
+            departments.map(async (d) => {
+                try {
+                    return await fetchSections(d.id);
+                } catch (err) {
+                    console.warn(`Could not fetch sections for department ${d.id}:`, err);
+                    return [];
+                }
+            })
+        );
+        const combined = results.flat();
+        const seen = new Set<number>();
+        return combined.filter(s => {
+            if (s.id && seen.has(s.id)) return false;
+            if (s.id) seen.add(s.id);
+            return true;
+        });
+    }
+
+    // Otherwise try general endpoint
+    try {
+        return await fetchSections();
+    } catch {
+        return [];
+    }
+}
+
+export async function createSection(departmentId: number, name: string, color?: string | null): Promise<Section> {
+    const body: any = { 
+        name: name.trim(),
+        color: color ? color.trim() : null 
+    };
+
+    const response = await fetchWithAuth(`${API_BASE_URL}/scheduling/v1.0/sections/${departmentId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`${response.status}: ${parseError(errText)}`);
+    }
+
+    const text = await response.text();
+    const extractedId = extractIdFromLocation(response);
+    const parsed = safeJsonParse(text);
+    const result = parsed || { id: extractedId };
+    const id = result.id || result.sectionId || (result.data && (result.data.id || result.data.sectionId)) || extractedId;
+    return {
+        id,
+        name: name.trim(),
+        departmentId,
+        color: color || null
+    };
+}
+
+export async function updateSection(departmentId: number, sectionId: number, name: string, color?: string | null): Promise<Section> {
+    const body: any = { 
+        name: name.trim(),
+        color: color !== undefined ? (color ? color.trim() : null) : null
+    };
+
+    const response = await fetchWithAuth(`${API_BASE_URL}/scheduling/v1.0/sections/${departmentId}/${sectionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`${response.status}: ${parseError(errText)}`);
+    }
+
+    const text = await response.text();
+    const parsed = safeJsonParse(text);
+    if (parsed && (parsed.data || parsed.id || parsed.sectionId)) {
+        const res = parsed.data || parsed;
+        return {
+            id: res.id || res.sectionId || sectionId,
+            name: res.name || name,
+            departmentId: res.departmentId || departmentId,
+            color: res.color !== undefined ? res.color : (color || null)
+        };
+    }
+    return { id: sectionId, name: name.trim(), departmentId, color: color || null };
+}
+
+export async function deleteSection(departmentId: number, sectionId: number): Promise<void> {
+    const response = await fetchWithAuth(`${API_BASE_URL}/scheduling/v1.0/sections/${departmentId}/${sectionId}`, {
+        method: 'DELETE'
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`${response.status}: ${parseError(errText)}`);
+    }
+}
+
+export async function updatePosition(id: number, payload: any): Promise<Position> {
+    const response = await fetchWithAuth(`${API_BASE_URL}/scheduling/v1.0/positions/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`${response.status}: ${parseError(errText)}`);
+    }
+
+    const text = await response.text();
+    const parsed = safeJsonParse(text);
+    return parsed?.data || parsed || { id, name: payload.name || '' };
+}
+
+export async function deletePosition(id: number): Promise<void> {
+    const response = await fetchWithAuth(`${API_BASE_URL}/scheduling/v1.0/positions/${id}`, {
+        method: 'DELETE'
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`${response.status}: ${parseError(errText)}`);
+    }
+}
+
+export async function updateSkill(id: number, name: string, description: string = ''): Promise<Skill> {
+    const response = await fetchWithAuth(`${API_BASE_URL}/hr/v1.0/skills/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), description: description.trim(), isTimeLimited: false })
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`${response.status}: ${parseError(errText)}`);
+    }
+
+    const text = await response.text();
+    const parsed = safeJsonParse(text);
+    return parsed?.data || parsed || { id, name: name.trim(), description };
+}
+
+export async function deleteSkill(id: number): Promise<void> {
+    const response = await fetchWithAuth(`${API_BASE_URL}/hr/v1.0/skills?skillId=${id}`, {
+        method: 'DELETE'
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`${response.status}: ${parseError(errText)}`);
+    }
+}
+

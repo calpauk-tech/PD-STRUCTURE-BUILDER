@@ -9,6 +9,13 @@ export interface Department {
   number?: string | null;
 }
 
+export interface Section {
+  id: number;
+  name: string;
+  departmentId: number;
+  color?: string | null;
+}
+
 export interface EmployeeGroup {
   id: number;
   name: string;
@@ -30,9 +37,21 @@ export interface RevenueUnit {
 export interface Position {
   id: number;
   name: string;
+  departmentId?: number;
+  sectionId?: number;
+  employeeGroupId?: number;
+  color?: string;
+  validFrom?: string;
+  validTo?: string;
+  startDate?: string;
+  endDate?: string;
+  isActive?: boolean;
+  affectRevenue?: boolean;
+  revenueUnitId?: number;
+  skillIds?: number[];
 }
 
-export type StructureItemType = 'department' | 'employee_group' | 'skill' | 'position';
+export type StructureItemType = 'department' | 'section' | 'employee_group' | 'skill' | 'position';
 export type ImportAction = 'create' | 'skip_duplicate' | 'delete' | 'update';
 
 export interface StructureReviewItem {
@@ -53,7 +72,9 @@ export interface CurrentStructure {
   departments: Department[];
   employeeGroups: EmployeeGroup[];
   skills: Skill[];
-  revenueUnits: RevenueUnit[];
+  positions: Position[];
+  revenueUnits?: RevenueUnit[];
+  sections?: Section[];
 }
 
 export interface ExcelParsedSheet {
