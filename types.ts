@@ -14,6 +14,7 @@ export interface Section {
   name: string;
   departmentId: number;
   color?: string | null;
+  isActive?: boolean;
 }
 
 export interface EmployeeGroup {

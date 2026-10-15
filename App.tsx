@@ -577,9 +577,9 @@ export default function App() {
             setCurrentStructure({
                 departments: depts,
                 employeeGroups: groups,
-                skills,
-                positions,
-                sections,
+                skills: (skills || []).filter((s: any) => s.isActive !== false && s.IsActive !== false && s.isActive !== 'false' && s.IsActive !== 'false'),
+                positions: (positions || []).filter((p: any) => p.isActive !== false && p.IsActive !== false && p.isActive !== 'false' && p.IsActive !== 'false'),
+                sections: (sections || []).filter((s: any) => s.isActive !== false && s.IsActive !== false && s.isActive !== 'false' && s.IsActive !== 'false'),
                 revenueUnits: revUnits
             });
             setPortalInfo(info);
@@ -640,9 +640,9 @@ export default function App() {
             setCurrentStructure({
                 departments: depts,
                 employeeGroups: groups,
-                skills,
-                positions,
-                sections,
+                skills: (skills || []).filter((s: any) => s.isActive !== false && s.IsActive !== false && s.isActive !== 'false' && s.IsActive !== 'false'),
+                positions: (positions || []).filter((p: any) => p.isActive !== false && p.IsActive !== false && p.isActive !== 'false' && p.IsActive !== 'false'),
+                sections: (sections || []).filter((s: any) => s.isActive !== false && s.IsActive !== false && s.isActive !== 'false' && s.IsActive !== 'false'),
                 revenueUnits: revUnits
             });
             setPortalInfo(info);
@@ -812,9 +812,10 @@ export default function App() {
             cellStyles.push({ r: currentRow, c: 2, s: colHeaderStyle });
             currentRow++;
 
-            if (currentStructure.sections && currentStructure.sections.length > 0) {
+            const activeSections = (currentStructure.sections || []).filter(s => s.isActive !== false && (s as any).IsActive !== false && (s as any).isActive !== 'false' && (s as any).IsActive !== 'false');
+            if (activeSections.length > 0) {
                 const deptMap = new Map<number, string>(currentStructure.departments.map(d => [d.id, d.name]));
-                currentStructure.sections.forEach(sec => {
+                activeSections.forEach(sec => {
                     const deptName = deptMap.get(sec.departmentId) || `Dept ID: ${sec.departmentId}`;
                     const details = [deptName, sec.color ? `Color: ${sec.color}` : ''].filter(Boolean).join(' | ');
                     rows.push([sec.name, sec.id, details]);
@@ -849,10 +850,11 @@ export default function App() {
             cellStyles.push({ r: currentRow, c: 2, s: colHeaderStyle });
             currentRow++;
 
-            if (currentStructure.positions && currentStructure.positions.length > 0) {
+            const activePositions = (currentStructure.positions || []).filter(p => p.isActive !== false && (p as any).IsActive !== false && (p as any).isActive !== 'false' && (p as any).IsActive !== 'false');
+            if (activePositions.length > 0) {
                 const deptMap = new Map<number, string>(currentStructure.departments.map(d => [d.id, d.name]));
                 const groupMap = new Map<number, string>(currentStructure.employeeGroups.map(g => [g.id, g.name]));
-                currentStructure.positions.forEach(pos => {
+                activePositions.forEach(pos => {
                     const deptName = pos.departmentId ? deptMap.get(pos.departmentId) : undefined;
                     const groupName = pos.employeeGroupId ? groupMap.get(pos.employeeGroupId) : undefined;
                     const details: string[] = [];
@@ -1008,12 +1010,15 @@ export default function App() {
             }
         }
 
+        const activeSections = (currentStructure.sections || []).filter(s => s.isActive !== false && (s as any).IsActive !== false && (s as any).isActive !== 'false' && (s as any).IsActive !== 'false');
+        const activePositions = (currentStructure.positions || []).filter(p => p.isActive !== false && (p as any).IsActive !== false && (p as any).isActive !== 'false' && (p as any).IsActive !== 'false');
+
         // Prepare rows based on chosen options
         const maxLen = Math.max(
             includeDepartments ? currentStructure.departments.length : 0,
             includeEmployeeGroups ? currentStructure.employeeGroups.length : 0,
-            includeSections ? (currentStructure.sections?.length || 0) : 0,
-            includePositions ? (currentStructure.positions?.length || 0) : 0,
+            includeSections ? activeSections.length : 0,
+            includePositions ? activePositions.length : 0,
             includeSkills ? (currentStructure.skills?.length || 0) : 0
         );
         const data: any[] = [];
@@ -1057,7 +1062,7 @@ export default function App() {
                 }
             }
             if (includeSections) {
-                const sec = currentStructure.sections?.[i];
+                const sec = activeSections[i];
                 const deptName = sec?.departmentId ? (currentStructure.departments.find(d => d.id === sec.departmentId)?.name || "") : "";
                 if (appMode === 'delete') {
                     row["Section: Name"] = sec?.name || "";
@@ -1075,15 +1080,15 @@ export default function App() {
             }
             if (includePositions) {
                 if (appMode === 'delete') {
-                    row["Positions"] = currentStructure.positions?.[i]?.name || "";
+                    row["Positions"] = activePositions[i]?.name || "";
                 } else if (appMode === 'update') {
-                    row["Positions"] = currentStructure.positions?.[i]?.name || "";
+                    row["Positions"] = activePositions[i]?.name || "";
                     row["UPDATE - Position Name"] = "";
                 } else {
-                    const pos = currentStructure.positions?.[i];
+                    const pos = activePositions[i];
                     const deptName = pos?.departmentId ? (currentStructure.departments.find(d => d.id === pos.departmentId)?.name || "") : "";
                     const groupName = pos?.employeeGroupId ? (currentStructure.employeeGroups.find(g => g.id === pos.employeeGroupId)?.name || "") : "";
-                    const secName = pos?.sectionId ? (currentStructure.sections?.find(s => s.id === pos.sectionId)?.name || "") : "";
+                    const secName = pos?.sectionId ? (activeSections.find(s => s.id === pos.sectionId)?.name || "") : "";
                     const revUnitName = pos?.revenueUnitId ? (currentStructure.revenueUnits?.find(r => r.id === pos.revenueUnitId)?.name || "") : "";
                     let skillNames = "";
                     if (pos?.skillIds && currentStructure.skills) {
@@ -2596,7 +2601,14 @@ export default function App() {
             ]);
             const positions = await fetchPositions(skills).catch(() => []);
             const sections = await fetchAllSections(depts).catch(() => []);
-            setCurrentStructure({ departments: depts, employeeGroups: groups, skills, positions, sections, revenueUnits: revUnits });
+            setCurrentStructure({ 
+                departments: depts, 
+                employeeGroups: groups, 
+                skills: (skills || []).filter((s: any) => s.isActive !== false && s.IsActive !== false && s.isActive !== 'false' && s.IsActive !== 'false'),
+                positions: (positions || []).filter((p: any) => p.isActive !== false && p.IsActive !== false && p.isActive !== 'false' && p.IsActive !== 'false'),
+                sections: (sections || []).filter((s: any) => s.isActive !== false && s.IsActive !== false && s.isActive !== 'false' && s.IsActive !== 'false'),
+                revenueUnits: revUnits 
+            });
         } catch { }
     };
 
@@ -2770,16 +2782,18 @@ export default function App() {
     // Current Structure Preview filtered items by department
     const filteredPreviewSections = useMemo(() => {
         if (!previewSectionDeptId) return [];
-        if (previewSectionDeptId === 'all') return currentStructure.sections || [];
+        const activeSections = (currentStructure.sections || []).filter(s => s.isActive !== false && (s as any).IsActive !== false && (s as any).isActive !== 'false' && (s as any).IsActive !== 'false');
+        if (previewSectionDeptId === 'all') return activeSections;
         const targetDeptId = Number(previewSectionDeptId);
-        return (currentStructure.sections || []).filter(s => Number(s.departmentId) === targetDeptId);
+        return activeSections.filter(s => Number(s.departmentId) === targetDeptId);
     }, [currentStructure.sections, previewSectionDeptId]);
 
     const filteredPreviewPositions = useMemo(() => {
         if (!previewPositionDeptId) return [];
-        if (previewPositionDeptId === 'all') return currentStructure.positions || [];
+        const activePositions = (currentStructure.positions || []).filter(p => p.isActive !== false && (p as any).IsActive !== false && (p as any).isActive !== 'false' && (p as any).IsActive !== 'false');
+        if (previewPositionDeptId === 'all') return activePositions;
         const targetDeptId = Number(previewPositionDeptId);
-        return (currentStructure.positions || []).filter(p => {
+        return activePositions.filter(p => {
             if (p.departmentId !== undefined && p.departmentId !== null) {
                 return Number(p.departmentId) === targetDeptId;
             }

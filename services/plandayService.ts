@@ -516,23 +516,32 @@ export async function fetchPositionById(positionId: number): Promise<Position> {
 }
 
 export async function fetchPositions(skillsOrHasSkills?: boolean | Skill[] | number): Promise<Position[]> {
+    const isItemActive = (item: any): boolean => {
+        if (!item) return false;
+        if (item.isActive === false || item.IsActive === false || item.isActive === 'false' || item.IsActive === 'false') return false;
+        if (item.isDeleted || item.status === 'Deleted') return false;
+        return true;
+    };
+
     const rawPositions = await fetchPaginatedData('/scheduling/v1.0/positions');
-    const basePositions: Position[] = rawPositions.map((p: any) => ({
-        ...p,
-        id: p.id !== undefined ? p.id : (p.positionId !== undefined ? p.positionId : 0),
-        name: p.name || p.title || '',
-        departmentId: p.departmentId !== undefined ? p.departmentId : (p.DepartmentId !== undefined ? p.DepartmentId : undefined),
-        sectionId: p.sectionId !== undefined ? p.sectionId : (p.SectionId !== undefined ? p.SectionId : undefined),
-        employeeGroupId: p.employeeGroupId !== undefined ? p.employeeGroupId : (p.EmployeeGroupId !== undefined ? p.EmployeeGroupId : undefined),
-        startDate: p.startDate || p.StartDate || undefined,
-        endDate: p.endDate || p.EndDate || undefined,
-        validFrom: p.validFrom || p.startDate || p.StartDate || undefined,
-        validTo: p.validTo || p.endDate || p.EndDate || undefined,
-        isActive: p.isActive !== undefined ? p.isActive : (p.IsActive !== undefined ? p.IsActive : undefined),
-        affectRevenue: p.affectRevenue !== undefined ? p.affectRevenue : (p.AffectRevenue !== undefined ? p.AffectRevenue : undefined),
-        revenueUnitId: p.revenueUnitId !== undefined ? p.revenueUnitId : (p.RevenueUnitId !== undefined ? p.RevenueUnitId : (p.revenueUnit?.id || undefined)),
-        skillIds: Array.isArray(p.skillIds) ? p.skillIds : (Array.isArray(p.SkillIds) ? p.SkillIds : [])
-    }));
+    const basePositions: Position[] = rawPositions
+        .filter(isItemActive)
+        .map((p: any) => ({
+            ...p,
+            id: p.id !== undefined ? p.id : (p.positionId !== undefined ? p.positionId : 0),
+            name: p.name || p.title || '',
+            departmentId: p.departmentId !== undefined ? p.departmentId : (p.DepartmentId !== undefined ? p.DepartmentId : undefined),
+            sectionId: p.sectionId !== undefined ? p.sectionId : (p.SectionId !== undefined ? p.SectionId : undefined),
+            employeeGroupId: p.employeeGroupId !== undefined ? p.employeeGroupId : (p.EmployeeGroupId !== undefined ? p.EmployeeGroupId : undefined),
+            startDate: p.startDate || p.StartDate || undefined,
+            endDate: p.endDate || p.EndDate || undefined,
+            validFrom: p.validFrom || p.startDate || p.StartDate || undefined,
+            validTo: p.validTo || p.endDate || p.EndDate || undefined,
+            isActive: p.isActive !== undefined ? p.isActive : (p.IsActive !== undefined ? p.IsActive : undefined),
+            affectRevenue: p.affectRevenue !== undefined ? p.affectRevenue : (p.AffectRevenue !== undefined ? p.AffectRevenue : undefined),
+            revenueUnitId: p.revenueUnitId !== undefined ? p.revenueUnitId : (p.RevenueUnitId !== undefined ? p.RevenueUnitId : (p.revenueUnit?.id || undefined)),
+            skillIds: Array.isArray(p.skillIds) ? p.skillIds : (Array.isArray(p.SkillIds) ? p.SkillIds : [])
+        }));
 
     // If there are any skills created in the portal (minimum 1), the app will have to
     // use GET /scheduling/v1.0/positions/{positionId} when looking up positions in order
@@ -563,6 +572,9 @@ export async function fetchPositions(skillsOrHasSkills?: boolean | Skill[] | num
                     if (!pos.id) return pos;
                     try {
                         const detail = await fetchPositionById(pos.id);
+                        if (!isItemActive(detail)) {
+                            return null;
+                        }
                         return {
                             ...pos,
                             ...detail,
@@ -576,12 +588,12 @@ export async function fetchPositions(skillsOrHasSkills?: boolean | Skill[] | num
                     }
                 })
             );
-            detailedPositions.push(...chunkResults);
+            detailedPositions.push(...chunkResults.filter((p): p is Position => p !== null));
         }
-        return detailedPositions;
+        return detailedPositions.filter(isItemActive);
     }
 
-    return basePositions;
+    return basePositions.filter(isItemActive);
 }
 
 export async function createPosition(payload: any): Promise<Position> {
@@ -617,26 +629,38 @@ export async function fetchPortalInfo(): Promise<any> {
 // --- Planday Sections API ---
 
 export async function fetchSections(departmentId?: number): Promise<Section[]> {
+    const isSectionActive = (item: any): boolean => {
+        if (!item) return false;
+        if (item.isActive === false || item.IsActive === false || item.isActive === 'false' || item.IsActive === 'false') return false;
+        if (item.isDeleted || item.status === 'Deleted') return false;
+        return true;
+    };
+
     const endpoint = departmentId !== undefined 
         ? `/scheduling/v1.0/sections?departmentId=${departmentId}` 
         : `/scheduling/v1.0/sections`;
     const data = await fetchPaginatedData(endpoint);
-    return data.map((item: any) => ({
-        id: item.id !== undefined ? item.id : (item.sectionId !== undefined ? item.sectionId : 0),
-        name: item.name || '',
-        departmentId: item.departmentId !== undefined ? item.departmentId : (departmentId || 0),
-        color: item.color || null
-    }));
+    return data
+        .filter(isSectionActive)
+        .map((item: any) => ({
+            id: item.id !== undefined ? item.id : (item.sectionId !== undefined ? item.sectionId : 0),
+            name: item.name || '',
+            departmentId: item.departmentId !== undefined ? item.departmentId : (departmentId || 0),
+            color: item.color || null,
+            isActive: item.isActive !== undefined ? item.isActive : (item.IsActive !== undefined ? item.IsActive : undefined)
+        }));
 }
 
 export async function fetchAllSections(departments?: Department[]): Promise<Section[]> {
+    const isSectionActive = (s: Section) => s.isActive !== false && (s as any).IsActive !== false && (s as any).isActive !== 'false' && (s as any).IsActive !== 'false';
+
     // If departments provided, try fetching per department to be guaranteed complete data
     if (departments && departments.length > 0) {
         try {
             // First attempt: try general endpoint if it returns everything
             const general = await fetchSections().catch(() => null);
             if (general && general.length > 0) {
-                return general;
+                return general.filter(isSectionActive);
             }
         } catch { }
 
@@ -653,16 +677,19 @@ export async function fetchAllSections(departments?: Department[]): Promise<Sect
         );
         const combined = results.flat();
         const seen = new Set<number>();
-        return combined.filter(s => {
-            if (s.id && seen.has(s.id)) return false;
-            if (s.id) seen.add(s.id);
-            return true;
-        });
+        return combined
+            .filter(isSectionActive)
+            .filter(s => {
+                if (s.id && seen.has(s.id)) return false;
+                if (s.id) seen.add(s.id);
+                return true;
+            });
     }
 
     // Otherwise try general endpoint
     try {
-        return await fetchSections();
+        const sections = await fetchSections();
+        return sections.filter(isSectionActive);
     } catch {
         return [];
     }
