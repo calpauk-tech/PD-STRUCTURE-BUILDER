@@ -725,11 +725,24 @@ export async function createSection(departmentId: number, name: string, color?: 
     };
 }
 
-export async function updateSection(departmentId: number, sectionId: number, name: string, color?: string | null): Promise<Section> {
-    const body: any = { 
-        name: name.trim(),
-        color: color !== undefined ? (color ? color.trim() : null) : null
-    };
+export async function updateSection(
+    departmentId: number, 
+    sectionId: number, 
+    payloadOrName: string | { name: string; color?: string | null }, 
+    colorParam?: string | null
+): Promise<Section> {
+    const body: any = {};
+    if (typeof payloadOrName === 'string') {
+        body.name = payloadOrName.trim();
+        if (colorParam !== undefined) {
+            body.color = colorParam ? colorParam.trim() : null;
+        }
+    } else {
+        body.name = payloadOrName.name.trim();
+        if (payloadOrName.color !== undefined) {
+            body.color = payloadOrName.color ? payloadOrName.color.trim() : null;
+        }
+    }
 
     const response = await fetchWithAuth(`${API_BASE_URL}/scheduling/v1.0/sections/${departmentId}/${sectionId}`, {
         method: 'PUT',
@@ -748,12 +761,12 @@ export async function updateSection(departmentId: number, sectionId: number, nam
         const res = parsed.data || parsed;
         return {
             id: res.id || res.sectionId || sectionId,
-            name: res.name || name,
+            name: res.name || body.name,
             departmentId: res.departmentId || departmentId,
-            color: res.color !== undefined ? res.color : (color || null)
+            color: res.color !== undefined ? res.color : (body.color !== undefined ? body.color : null)
         };
     }
-    return { id: sectionId, name: name.trim(), departmentId, color: color || null };
+    return { id: sectionId, name: body.name, departmentId, color: body.color !== undefined ? body.color : null };
 }
 
 export async function deleteSection(departmentId: number, sectionId: number): Promise<void> {

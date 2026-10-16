@@ -7,7 +7,10 @@ import type {
     StructureReviewItem, 
     OverwriteMode, 
     CurrentStructure,
-    Section
+    Section,
+    Position,
+    Skill,
+    RevenueUnit
 } from './types';
 import { 
     initializeService, 
@@ -307,6 +310,7 @@ export default function App() {
 
     // Positions Mapping State
     const [posNameColumn, setPosNameColumn] = useState<string>('');
+    const [posUpdateNameColumn, setPosUpdateNameColumn] = useState<string>('');
     const [posDeptColumn, setPosDeptColumn] = useState<string>('');
     const [posSectionColumn, setPosSectionColumn] = useState<string>('');
     const [posGroupColumn, setPosGroupColumn] = useState<string>('');
@@ -375,6 +379,7 @@ export default function App() {
         let detSectionUpdateName = '';
 
         let detPosName = '';
+        let detPosUpdateName = '';
         let detPosDept = '';
         let detPosSection = '';
         let detPosGroup = '';
@@ -504,16 +509,111 @@ export default function App() {
                 detSectionColor = h;
             }
 
-            if (!detPosName && clean.includes('position: name')) detPosName = h;
-            if (!detPosDept && clean.includes('position: department')) detPosDept = h;
-            if (!detPosSection && clean.includes('position: section')) detPosSection = h;
-            if (!detPosGroup && clean.includes('position: employee group')) detPosGroup = h;
-            if (!detPosColor && clean.includes('position: color')) detPosColor = h;
-            if (!detPosValidFrom && clean.includes('position: valid from')) detPosValidFrom = h;
-            if (!detPosValidTo && clean.includes('position: valid to')) detPosValidTo = h;
-            if (!detPosSkills && clean.includes('position: skills')) detPosSkills = h;
-            if (!detPosPayroll && clean.includes('position: include in payroll')) detPosPayroll = h;
-            if (!detPosRevenueUnit && clean.includes('position: revenue unit')) detPosRevenueUnit = h;
+            // Position Column detection
+            if (!detPosUpdateName && (
+                clean.includes('update - position name') ||
+                clean.includes('update - pos name') ||
+                clean.includes('update position name') ||
+                clean.includes('update pos name') ||
+                clean.includes('new position name') ||
+                clean.includes('new pos name') ||
+                clean === 'update - position' ||
+                clean === 'new position'
+            )) {
+                detPosUpdateName = h;
+            }
+
+            if (!detPosName && !clean.includes('update') && !clean.includes('new') && (
+                clean.includes('position: name') ||
+                clean === 'positions' ||
+                clean === 'position' ||
+                clean === 'position name' ||
+                clean === 'pos name'
+            )) {
+                detPosName = h;
+            }
+
+            if (!detPosDept && (
+                clean.includes('position: department') ||
+                clean.includes('position: dept') ||
+                clean === 'position department' ||
+                clean === 'position dept'
+            )) {
+                detPosDept = h;
+            }
+
+            if (!detPosSection && (
+                clean.includes('position: section') ||
+                clean === 'position section'
+            )) {
+                detPosSection = h;
+            }
+
+            if (!detPosGroup && (
+                clean.includes('position: employee group') ||
+                clean === 'position employee group' ||
+                clean === 'position group'
+            )) {
+                detPosGroup = h;
+            }
+
+            if (!detPosColor && (
+                clean.includes('position: color') ||
+                clean === 'position color' ||
+                clean.includes('position color hex') ||
+                clean.includes('pos. color') ||
+                clean.includes('pos color')
+            )) {
+                detPosColor = h;
+            }
+
+            if (!detPosValidFrom && (
+                clean.includes('position: valid from') ||
+                clean.includes('position valid from') ||
+                clean.includes('pos. valid from') ||
+                clean.includes('pos valid from')
+            )) {
+                detPosValidFrom = h;
+            }
+
+            if (!detPosValidTo && (
+                clean.includes('position: valid to') ||
+                clean.includes('position valid to') ||
+                clean.includes('pos. valid to') ||
+                clean.includes('pos valid to')
+            )) {
+                detPosValidTo = h;
+            }
+
+            if (!detPosSkills && (
+                clean.includes('position: skills') ||
+                clean.includes('position skills') ||
+                clean.includes('pos. skills') ||
+                clean.includes('pos skills')
+            )) {
+                detPosSkills = h;
+            }
+
+            if (!detPosPayroll && (
+                clean.includes('position: include in payroll') ||
+                clean.includes('include in payroll') ||
+                clean.includes('affect revenue') ||
+                clean.includes('affectrevenue') ||
+                clean.includes('pos. in payroll') ||
+                clean.includes('pos payroll')
+            )) {
+                detPosPayroll = h;
+            }
+
+            if (!detPosRevenueUnit && (
+                clean.includes('position: revenue unit') ||
+                clean.includes('position revenue unit') ||
+                clean.includes('pos. revenue unit') ||
+                clean.includes('pos. rev unit') ||
+                clean.includes('pos revenue unit')
+            )) {
+                detPosRevenueUnit = h;
+            }
         }
 
         setDeptColumn(detectedDept);
@@ -534,6 +634,7 @@ export default function App() {
         setSectionUpdateNameColumn(detSectionUpdateName);
 
         setPosNameColumn(detPosName);
+        setPosUpdateNameColumn(detPosUpdateName);
         setPosDeptColumn(detPosDept);
         setPosSectionColumn(detPosSection);
         setPosGroupColumn(detPosGroup);
@@ -1082,8 +1183,24 @@ export default function App() {
                 if (appMode === 'delete') {
                     row["Positions"] = activePositions[i]?.name || "";
                 } else if (appMode === 'update') {
-                    row["Positions"] = activePositions[i]?.name || "";
+                    const pos = activePositions[i];
+                    const deptName = pos?.departmentId ? (currentStructure.departments.find(d => d.id === pos.departmentId)?.name || "") : "";
+                    const secName = pos?.sectionId ? (activeSections.find(s => s.id === pos.sectionId)?.name || "") : "";
+                    const revUnitName = pos?.revenueUnitId ? (currentStructure.revenueUnits?.find(r => r.id === pos.revenueUnitId)?.name || "") : "";
+                    let skillNames = "";
+                    if (pos?.skillIds && currentStructure.skills) {
+                        skillNames = currentStructure.skills.filter(s => pos.skillIds?.includes(s.id)).map(s => s.name).join(', ');
+                    }
+                    row["Positions"] = pos?.name || "";
                     row["UPDATE - Position Name"] = "";
+                    row["Position: Department (optional)"] = deptName;
+                    row["Position: Section (optional)"] = secName;
+                    row["Position: Color Hex # (optional)"] = pos?.color || "";
+                    row["Position: Valid from (optional)"] = pos?.validFrom || "";
+                    row["Position: Valid to (optional)"] = pos?.validTo || "";
+                    row["Position: Skills (optional)"] = skillNames;
+                    row["Position: Include in Payroll % - true/false"] = pos?.affectRevenue !== undefined ? String(pos.affectRevenue) : "true";
+                    row["Position: Revenue Unit"] = revUnitName;
                 } else {
                     const pos = activePositions[i];
                     const deptName = pos?.departmentId ? (currentStructure.departments.find(d => d.id === pos.departmentId)?.name || "") : "";
@@ -1194,7 +1311,18 @@ export default function App() {
             if (appMode === 'delete') {
                 headers.push("Positions");
             } else if (appMode === 'update') {
-                headers.push("Positions", "UPDATE - Position Name");
+                headers.push(
+                    "Positions", 
+                    "UPDATE - Position Name",
+                    "Position: Department (optional)",
+                    "Position: Section (optional)",
+                    "Position: Color Hex # (optional)",
+                    "Position: Valid from (optional)",
+                    "Position: Valid to (optional)",
+                    "Position: Skills (optional)",
+                    "Position: Include in Payroll % - true/false",
+                    "Position: Revenue Unit"
+                );
             } else {
                 headers.push(
                     "Position: Department",
@@ -1405,7 +1533,7 @@ export default function App() {
                 const hasSecColor = !!(sectionColorColumn && row[sectionColorColumn]);
                 const hasSecUpdateName = !!(sectionUpdateNameColumn && row[sectionUpdateNameColumn]);
 
-                if ((hasSecColor || hasSecUpdateName) && (!hasSecName || !hasSecDept)) {
+                if (appMode !== 'update' && (hasSecColor || hasSecUpdateName) && (!hasSecName || !hasSecDept)) {
                     const entered = [];
                     if (hasSecName) entered.push(`Section Name: '${row[sectionNameColumn]}'`);
                     if (hasSecDept) entered.push(`Department: '${row[sectionDeptColumn]}'`);
@@ -1414,13 +1542,13 @@ export default function App() {
                     warnings.push(`Row ${rowNum}: Excluded Section row. Missing required: ${!hasSecName ? "'Section Name' " : ""}${!hasSecDept ? "'Section Department'" : ""}. Entered: [${entered.join(', ')}]`);
                 }
 
-                if (hasSecName && hasSecDept) {
+                if (hasSecName && (hasSecDept || appMode === 'update')) {
                     const sName = String(row[sectionNameColumn]).trim();
-                    const dName = String(row[sectionDeptColumn]).trim();
+                    const dName = hasSecDept ? String(row[sectionDeptColumn]).trim() : '';
                     const cVal = hasSecColor ? String(row[sectionColorColumn]).trim() : null;
                     const uName = hasSecUpdateName ? String(row[sectionUpdateNameColumn]).trim() : null;
-                    if (sName && dName) {
-                        const key = `${dName.toLowerCase()}:::${sName.toLowerCase()}`;
+                    if (sName) {
+                        const key = dName ? `${dName.toLowerCase()}:::${sName.toLowerCase()}` : `:::${sName.toLowerCase()}`;
                         newSectionsMap.set(key, {
                             name: sName,
                             departmentName: dName,
@@ -1480,8 +1608,9 @@ export default function App() {
                 const hasPosName = !!(posNameColumn && row[posNameColumn]);
                 const hasPosDept = !!(posDeptColumn && row[posDeptColumn]);
                 const hasPosGroup = !!(posGroupColumn && row[posGroupColumn]);
+                const hasPosUpdateName = !!(posUpdateNameColumn && row[posUpdateNameColumn]);
                 
-                const hasAnyPosData = hasPosName || hasPosDept || hasPosGroup || 
+                const hasAnyPosData = hasPosName || hasPosDept || hasPosGroup || hasPosUpdateName ||
                                       !!(posSectionColumn && row[posSectionColumn]) ||
                                       !!(posColorColumn && row[posColorColumn]) ||
                                       !!(posValidFromColumn && row[posValidFromColumn]) ||
@@ -1491,38 +1620,59 @@ export default function App() {
                                       !!(posRevenueUnitColumn && row[posRevenueUnitColumn]);
 
                 if (hasAnyPosData) {
-                    if (hasPosName && hasPosDept && hasPosGroup) {
-                        newPositionsList.push({
-                            name: String(row[posNameColumn]).trim(),
-                            departmentName: String(row[posDeptColumn]).trim(),
-                            sectionName: posSectionColumn && row[posSectionColumn] ? String(row[posSectionColumn]).trim() : '',
-                            employeeGroupName: String(row[posGroupColumn]).trim(),
-                            color: posColorColumn && row[posColorColumn] ? String(row[posColorColumn]).trim() : undefined,
-                            validFrom: posValidFromColumn && row[posValidFromColumn] ? parseDateWithFormat(row[posValidFromColumn], isUSFormat) : undefined,
-                            validTo: posValidToColumn && row[posValidToColumn] ? parseDateWithFormat(row[posValidToColumn], isUSFormat) : undefined,
-                            skills: posSkillsColumn && row[posSkillsColumn] ? String(row[posSkillsColumn]).trim() : '',
-                            affectRevenue: posPayrollColumn && row[posPayrollColumn] ? (String(row[posPayrollColumn]).trim().toLowerCase() !== 'false') : true,
-                            revenueUnitName: posRevenueUnitColumn && row[posRevenueUnitColumn] ? String(row[posRevenueUnitColumn]).trim() : ''
-                        });
+                    if (appMode === 'update') {
+                        if (hasPosName) {
+                            newPositionsList.push({
+                                name: String(row[posNameColumn]).trim(),
+                                updateName: hasPosUpdateName ? String(row[posUpdateNameColumn]).trim() : undefined,
+                                departmentName: hasPosDept ? String(row[posDeptColumn]).trim() : '',
+                                sectionName: posSectionColumn && row[posSectionColumn] ? String(row[posSectionColumn]).trim() : '',
+                                employeeGroupName: hasPosGroup ? String(row[posGroupColumn]).trim() : '',
+                                color: posColorColumn ? (row[posColorColumn] ? String(row[posColorColumn]).trim() : null) : undefined,
+                                validFrom: posValidFromColumn ? (row[posValidFromColumn] ? parseDateWithFormat(row[posValidFromColumn], isUSFormat) : null) : undefined,
+                                validTo: posValidToColumn ? (row[posValidToColumn] ? parseDateWithFormat(row[posValidToColumn], isUSFormat) : null) : undefined,
+                                skills: posSkillsColumn ? (row[posSkillsColumn] ? String(row[posSkillsColumn]).trim() : '') : undefined,
+                                affectRevenue: posPayrollColumn ? (row[posPayrollColumn] !== undefined && row[posPayrollColumn] !== '' ? (String(row[posPayrollColumn]).trim().toLowerCase() !== 'false' && String(row[posPayrollColumn]).trim() !== '0') : true) : undefined,
+                                revenueUnitName: posRevenueUnitColumn ? (row[posRevenueUnitColumn] ? String(row[posRevenueUnitColumn]).trim() : '') : undefined
+                            });
+                        } else {
+                            warnings.push(`Row ${rowNum}: Excluded Position update. Missing required: 'Position Name' to match.`);
+                        }
                     } else {
-                        const missing = [];
-                        if (!hasPosName) missing.push('Name');
-                        if (!hasPosDept) missing.push('Department');
-                        if (!hasPosGroup) missing.push('Employee Group');
-                        
-                        const entered = [];
-                        if (hasPosName) entered.push(`Name: '${row[posNameColumn]}'`);
-                        if (hasPosDept) entered.push(`Department: '${row[posDeptColumn]}'`);
-                        if (hasPosGroup) entered.push(`Employee Group: '${row[posGroupColumn]}'`);
-                        if (posSectionColumn && row[posSectionColumn]) entered.push(`Section: '${row[posSectionColumn]}'`);
-                        if (posColorColumn && row[posColorColumn]) entered.push(`Color: '${row[posColorColumn]}'`);
-                        if (posValidFromColumn && row[posValidFromColumn]) entered.push(`Valid From: '${row[posValidFromColumn]}'`);
-                        if (posValidToColumn && row[posValidToColumn]) entered.push(`Valid To: '${row[posValidToColumn]}'`);
-                        if (posSkillsColumn && row[posSkillsColumn]) entered.push(`Skills: '${row[posSkillsColumn]}'`);
-                        if (posPayrollColumn && row[posPayrollColumn]) entered.push(`Include in Payroll: '${row[posPayrollColumn]}'`);
-                        if (posRevenueUnitColumn && row[posRevenueUnitColumn]) entered.push(`Revenue Unit: '${row[posRevenueUnitColumn]}'`);
-                        
-                        warnings.push(`Row ${rowNum}: Excluded Position creation. Missing required: ${missing.join(', ')}. Entered: [${entered.join(', ')}]`);
+                        if (hasPosName && hasPosDept && hasPosGroup) {
+                            newPositionsList.push({
+                                name: String(row[posNameColumn]).trim(),
+                                updateName: hasPosUpdateName ? String(row[posUpdateNameColumn]).trim() : undefined,
+                                departmentName: String(row[posDeptColumn]).trim(),
+                                sectionName: posSectionColumn && row[posSectionColumn] ? String(row[posSectionColumn]).trim() : '',
+                                employeeGroupName: String(row[posGroupColumn]).trim(),
+                                color: posColorColumn && row[posColorColumn] ? String(row[posColorColumn]).trim() : undefined,
+                                validFrom: posValidFromColumn && row[posValidFromColumn] ? parseDateWithFormat(row[posValidFromColumn], isUSFormat) : undefined,
+                                validTo: posValidToColumn && row[posValidToColumn] ? parseDateWithFormat(row[posValidToColumn], isUSFormat) : undefined,
+                                skills: posSkillsColumn && row[posSkillsColumn] ? String(row[posSkillsColumn]).trim() : '',
+                                affectRevenue: posPayrollColumn && row[posPayrollColumn] ? (String(row[posPayrollColumn]).trim().toLowerCase() !== 'false') : true,
+                                revenueUnitName: posRevenueUnitColumn && row[posRevenueUnitColumn] ? String(row[posRevenueUnitColumn]).trim() : ''
+                            });
+                        } else {
+                            const missing = [];
+                            if (!hasPosName) missing.push('Name');
+                            if (!hasPosDept) missing.push('Department');
+                            if (!hasPosGroup) missing.push('Employee Group');
+                            
+                            const entered = [];
+                            if (hasPosName) entered.push(`Name: '${row[posNameColumn]}'`);
+                            if (hasPosDept) entered.push(`Department: '${row[posDeptColumn]}'`);
+                            if (hasPosGroup) entered.push(`Employee Group: '${row[posGroupColumn]}'`);
+                            if (posSectionColumn && row[posSectionColumn]) entered.push(`Section: '${row[posSectionColumn]}'`);
+                            if (posColorColumn && row[posColorColumn]) entered.push(`Color: '${row[posColorColumn]}'`);
+                            if (posValidFromColumn && row[posValidFromColumn]) entered.push(`Valid From: '${row[posValidFromColumn]}'`);
+                            if (posValidToColumn && row[posValidToColumn]) entered.push(`Valid To: '${row[posValidToColumn]}'`);
+                            if (posSkillsColumn && row[posSkillsColumn]) entered.push(`Skills: '${row[posSkillsColumn]}'`);
+                            if (posPayrollColumn && row[posPayrollColumn]) entered.push(`Include in Payroll: '${row[posPayrollColumn]}'`);
+                            if (posRevenueUnitColumn && row[posRevenueUnitColumn]) entered.push(`Revenue Unit: '${row[posRevenueUnitColumn]}'`);
+                            
+                            warnings.push(`Row ${rowNum}: Excluded Position creation. Missing required: ${missing.join(', ')}. Entered: [${entered.join(', ')}]`);
+                        }
                     }
                 }
             });
@@ -1695,32 +1845,52 @@ export default function App() {
         });
 
         // Sections from file
+        const isSectionColorMapped = !!sectionColorColumn;
+        const isSectionUpdateNameMapped = !!sectionUpdateNameColumn;
+
         newSectionsMap.forEach((secData) => {
-            const matchedDept = currentStructure.departments.find(d => 
+            let matchedDept = secData.departmentName ? currentStructure.departments.find(d => 
                 d.name.trim().toLowerCase() === secData.departmentName.toLowerCase() ||
                 String(d.id) === secData.departmentName
-            );
-            const deptBeingCreated = newDeptsMap.has(secData.departmentName.toLowerCase());
+            ) : undefined;
+            const deptBeingCreated = secData.departmentName ? newDeptsMap.has(secData.departmentName.toLowerCase()) : false;
 
-            const existingSec = (currentStructure.sections || []).find(s => {
+            let existingSec = (currentStructure.sections || []).find(s => {
                 const matchesName = s.name.trim().toLowerCase() === secData.name.toLowerCase();
                 if (!matchesName) return false;
                 if (matchedDept && s.departmentId === matchedDept.id) return true;
                 return false;
             });
 
+            // If not found yet and department wasn't specified (or didn't match), check if there is a matching section by name
+            if (!existingSec) {
+                const candidateSecs = (currentStructure.sections || []).filter(s => 
+                    s.name.trim().toLowerCase() === secData.name.toLowerCase()
+                );
+                if (candidateSecs.length === 1) {
+                    existingSec = candidateSecs[0];
+                    if (!matchedDept) {
+                        matchedDept = currentStructure.departments.find(d => d.id === existingSec!.departmentId);
+                    }
+                }
+            }
+
             const isDuplicate = !!existingSec;
 
             if (appMode === 'update') {
                 if (existingSec && matchedDept) {
-                    const targetName = (secData.updateName && secData.updateName.trim()) 
+                    const targetName = (isSectionUpdateNameMapped && secData.updateName && secData.updateName.trim()) 
                         ? secData.updateName.trim() 
                         : existingSec.name;
-                    const targetColor = secData.color !== null && secData.color !== undefined 
-                        ? secData.color 
-                        : (existingSec.color || null);
-                    const nameChanged = targetName !== existingSec.name;
-                    const colorChanged = targetColor !== (existingSec.color || null);
+                    
+                    const nameChanged = isSectionUpdateNameMapped && targetName !== existingSec.name;
+                    
+                    let targetColor: string | null | undefined = undefined;
+                    let colorChanged = false;
+                    if (isSectionColorMapped) {
+                        targetColor = secData.color ? secData.color.trim() : null;
+                        colorChanged = targetColor !== (existingSec.color || null);
+                    }
 
                     let msg = 'Update scheduled';
                     if (nameChanged && colorChanged) {
@@ -1729,8 +1899,18 @@ export default function App() {
                         msg = `Rename to '${targetName}'`;
                     } else if (colorChanged) {
                         msg = `Update color to '${targetColor || 'None'}'`;
-                    } else {
+                    } else if (!nameChanged && !colorChanged && (isSectionUpdateNameMapped || isSectionColorMapped)) {
                         msg = 'Existing values match file';
+                    }
+
+                    const updatePayload: any = {
+                        departmentId: matchedDept.id,
+                        departmentName: matchedDept.name,
+                        name: targetName
+                    };
+                    // ONLY include color in updatePayload if color column was mapped!
+                    if (isSectionColorMapped) {
+                        updatePayload.color = targetColor;
                     }
 
                     items.push({
@@ -1739,12 +1919,7 @@ export default function App() {
                         name: existingSec.name,
                         action: 'update',
                         status: 'pending',
-                        updatePayload: {
-                            departmentId: matchedDept.id,
-                            departmentName: matchedDept.name,
-                            name: targetName,
-                            color: targetColor
-                        },
+                        updatePayload,
                         resultMessage: msg
                     });
                 } else {
@@ -1753,30 +1928,33 @@ export default function App() {
                         name: secData.name,
                         action: 'skip_duplicate',
                         status: 'error',
-                        resultMessage: !matchedDept 
+                        resultMessage: secData.departmentName && !matchedDept 
                             ? `Department '${secData.departmentName}' not found in Planday` 
-                            : `Section '${secData.name}' not found in Department '${matchedDept ? matchedDept.name : ''}'`
+                            : `Section '${secData.name}' not found in Planday`
                     });
                 }
             } else {
                 // Import mode
                 if (isDuplicate && existingSec && matchedDept) {
-                    const targetColor = secData.color !== null && secData.color !== undefined ? secData.color : (existingSec.color || null);
-                    const targetName = secData.updateName ? secData.updateName.trim() : existingSec.name;
-                    if ((targetColor !== null && targetColor !== (existingSec.color || null)) || (secData.updateName && targetName !== existingSec.name)) {
+                    const targetColor = isSectionColorMapped ? (secData.color ? secData.color.trim() : null) : (existingSec.color || null);
+                    const targetName = (isSectionUpdateNameMapped && secData.updateName) ? secData.updateName.trim() : existingSec.name;
+                    if ((isSectionColorMapped && targetColor !== (existingSec.color || null)) || (isSectionUpdateNameMapped && targetName !== existingSec.name)) {
+                        const updatePayload: any = {
+                            departmentId: matchedDept.id,
+                            departmentName: matchedDept.name,
+                            name: targetName
+                        };
+                        if (isSectionColorMapped) {
+                            updatePayload.color = targetColor;
+                        }
                         items.push({
                             id: existingSec.id,
                             type: 'section',
                             name: existingSec.name,
                             action: 'update',
                             status: 'pending',
-                            updatePayload: {
-                                departmentId: matchedDept.id,
-                                departmentName: matchedDept.name,
-                                name: targetName,
-                                color: targetColor
-                            },
-                            resultMessage: secData.updateName ? `Updating name to '${targetName}' from file` : 'Updating color from file'
+                            updatePayload,
+                            resultMessage: (isSectionUpdateNameMapped && targetName !== existingSec.name) ? `Updating name to '${targetName}' from file` : 'Updating color from file'
                         });
                     } else {
                         items.push({
@@ -1808,23 +1986,324 @@ export default function App() {
         });
 
         // Positions from file
+        const isPosUpdateNameMapped = !!posUpdateNameColumn;
+        const isPosColorMapped = !!posColorColumn;
+        const isPosSectionMapped = !!posSectionColumn;
+        const isPosValidFromMapped = !!posValidFromColumn;
+        const isPosValidToMapped = !!posValidToColumn;
+        const isPosSkillsMapped = !!posSkillsColumn;
+        const isPosPayrollMapped = !!posPayrollColumn;
+        const isPosRevenueUnitMapped = !!posRevenueUnitColumn;
+
         newPositionsList.forEach(pos => {
             if (appMode === 'update') {
-                 items.push({
+                let matchedPos: Position | undefined = undefined;
+                let candidatePositions = currentStructure.positions || [];
+
+                if (pos.departmentName) {
+                    const matchedDept = currentStructure.departments.find(d => 
+                        d.name.trim().toLowerCase() === pos.departmentName.toLowerCase() ||
+                        String(d.id) === pos.departmentName
+                    );
+                    if (matchedDept) {
+                        candidatePositions = candidatePositions.filter(p => p.departmentId === matchedDept.id);
+                    }
+                }
+
+                if (pos.employeeGroupName && candidatePositions.length > 0) {
+                    const matchedGroup = currentStructure.employeeGroups.find(g => 
+                        g.name.trim().toLowerCase() === pos.employeeGroupName.toLowerCase() ||
+                        String(g.id) === pos.employeeGroupName
+                    );
+                    if (matchedGroup) {
+                        const grpFiltered = candidatePositions.filter(p => p.employeeGroupId === matchedGroup.id);
+                        if (grpFiltered.length > 0) {
+                            candidatePositions = grpFiltered;
+                        }
+                    }
+                }
+
+                matchedPos = candidatePositions.find(p => p.name.trim().toLowerCase() === pos.name.toLowerCase());
+
+                if (!matchedPos) {
+                    matchedPos = (currentStructure.positions || []).find(p => p.name.trim().toLowerCase() === pos.name.toLowerCase());
+                }
+
+                if (!matchedPos) {
+                    items.push({
+                        type: 'position',
+                        name: pos.name,
+                        action: 'skip_duplicate',
+                        status: 'error',
+                        resultMessage: pos.departmentName 
+                            ? `Position '${pos.name}' not found in Department '${pos.departmentName}'` 
+                            : `Position '${pos.name}' not found in Planday`
+                    });
+                    return;
+                }
+
+                const targetName = (isPosUpdateNameMapped && pos.updateName && pos.updateName.trim()) 
+                    ? pos.updateName.trim() 
+                    : matchedPos.name;
+
+                // affectRevenue is always required for updating positions. Set to true if not specified.
+                const targetAffectRevenue = (isPosPayrollMapped && pos.affectRevenue !== undefined && pos.affectRevenue !== null)
+                    ? Boolean(pos.affectRevenue)
+                    : true;
+
+                const payload: any = {
+                    name: targetName,
+                    affectRevenue: targetAffectRevenue
+                };
+
+                let targetSectionName: string | undefined = undefined;
+                if (isPosSectionMapped) {
+                    if (pos.sectionName) {
+                        targetSectionName = pos.sectionName;
+                        const matchedSec = (currentStructure.sections || []).find(s => 
+                            s.name.trim().toLowerCase() === pos.sectionName.toLowerCase() &&
+                            (!matchedPos?.departmentId || s.departmentId === matchedPos.departmentId)
+                        ) || (currentStructure.sections || []).find(s => s.name.trim().toLowerCase() === pos.sectionName.toLowerCase());
+                        payload.sectionId = matchedSec ? matchedSec.id : null;
+                    } else {
+                        payload.sectionId = null;
+                    }
+                }
+
+                if (isPosColorMapped) {
+                    payload.color = pos.color ? pos.color.trim() : null;
+                }
+
+                if (isPosValidFromMapped) {
+                    payload.validFrom = pos.validFrom || null;
+                }
+
+                if (isPosValidToMapped) {
+                    payload.validTo = pos.validTo || null;
+                }
+
+                if (isPosSkillsMapped) {
+                    if (pos.skills && String(pos.skills).trim()) {
+                        const skillTokens = String(pos.skills).split(',').map((s: string) => s.trim().toLowerCase());
+                        const skillIds: number[] = [];
+                        (currentStructure.skills || []).forEach(sk => {
+                            if (skillTokens.includes(sk.name.toLowerCase()) || skillTokens.includes(String(sk.id))) {
+                                skillIds.push(sk.id);
+                            }
+                        });
+                        payload.skillIds = skillIds;
+                    } else {
+                        payload.skillIds = [];
+                    }
+                }
+
+                let targetRevUnitName: string | undefined = undefined;
+                if (isPosRevenueUnitMapped) {
+                    if (pos.revenueUnitName) {
+                        targetRevUnitName = pos.revenueUnitName;
+                        const matchedRev = (currentStructure.revenueUnits || []).find(r => 
+                            r.name.trim().toLowerCase() === pos.revenueUnitName.toLowerCase() &&
+                            (!matchedPos?.departmentId || r.departmentId === matchedPos.departmentId)
+                        ) || (currentStructure.revenueUnits || []).find(r => r.name.trim().toLowerCase() === pos.revenueUnitName.toLowerCase());
+                        payload.revenueUnitId = matchedRev ? matchedRev.id : null;
+                    } else {
+                        payload.revenueUnitId = null;
+                    }
+                }
+
+                const changes: string[] = [];
+                if (isPosUpdateNameMapped && targetName !== matchedPos.name) {
+                    changes.push(`Rename to '${targetName}'`);
+                }
+                if (isPosColorMapped) {
+                    changes.push(`Color: '${payload.color || 'None'}'`);
+                }
+                if (isPosSectionMapped) {
+                    changes.push(`Section: '${pos.sectionName || 'None'}'`);
+                }
+                if (isPosPayrollMapped) {
+                    changes.push(`Payroll: ${payload.affectRevenue}`);
+                }
+                if (isPosValidFromMapped) {
+                    changes.push(`ValidFrom: '${payload.validFrom || 'None'}'`);
+                }
+                if (isPosValidToMapped) {
+                    changes.push(`ValidTo: '${payload.validTo || 'None'}'`);
+                }
+                if (isPosSkillsMapped) {
+                    changes.push(`Skills: '${pos.skills || 'None'}'`);
+                }
+                if (isPosRevenueUnitMapped) {
+                    changes.push(`RevUnit: '${pos.revenueUnitName || 'None'}'`);
+                }
+
+                const matchedDeptObj = currentStructure.departments.find(d => d.id === matchedPos!.departmentId);
+                const matchedGroupObj = currentStructure.employeeGroups.find(g => g.id === matchedPos!.employeeGroupId);
+
+                items.push({
+                    id: matchedPos.id,
                     type: 'position',
-                    name: pos.name,
-                    action: 'skip_duplicate',
-                    status: 'error',
-                    resultMessage: 'Update for positions not supported'
+                    name: matchedPos.name,
+                    action: 'update',
+                    status: 'pending',
+                    updatePayload: {
+                        ...payload,
+                        departmentName: matchedDeptObj?.name || pos.departmentName || '',
+                        employeeGroupName: matchedGroupObj?.name || pos.employeeGroupName || '',
+                        sectionName: targetSectionName,
+                        skills: pos.skills,
+                        revenueUnitName: targetRevUnitName
+                    },
+                    resultMessage: changes.length > 0 ? changes.join(', ') : 'Update scheduled'
                 });
             } else {
-                items.push({
-                    type: 'position',
-                    name: pos.name,
-                    action: 'create',
-                    status: 'pending',
-                    updatePayload: pos
-                });
+                // Import mode: check if position already exists in this Department & Employee Group
+                let matchedPos: Position | undefined = undefined;
+                let candidatePositions = currentStructure.positions || [];
+
+                if (pos.departmentName) {
+                    const matchedDept = currentStructure.departments.find(d => 
+                        d.name.trim().toLowerCase() === pos.departmentName.toLowerCase() ||
+                        String(d.id) === pos.departmentName
+                    );
+                    if (matchedDept) {
+                        candidatePositions = candidatePositions.filter(p => p.departmentId === matchedDept.id);
+                    }
+                }
+
+                if (pos.employeeGroupName && candidatePositions.length > 0) {
+                    const matchedGroup = currentStructure.employeeGroups.find(g => 
+                        g.name.trim().toLowerCase() === pos.employeeGroupName.toLowerCase() ||
+                        String(g.id) === pos.employeeGroupName
+                    );
+                    if (matchedGroup) {
+                        const grpFiltered = candidatePositions.filter(p => p.employeeGroupId === matchedGroup.id);
+                        if (grpFiltered.length > 0) {
+                            candidatePositions = grpFiltered;
+                        }
+                    }
+                }
+
+                matchedPos = candidatePositions.find(p => p.name.trim().toLowerCase() === pos.name.toLowerCase());
+
+                if (matchedPos) {
+                    const targetName = (isPosUpdateNameMapped && pos.updateName && pos.updateName.trim()) 
+                        ? pos.updateName.trim() 
+                        : matchedPos.name;
+
+                    const targetAffectRevenue = (isPosPayrollMapped && pos.affectRevenue !== undefined && pos.affectRevenue !== null)
+                        ? Boolean(pos.affectRevenue)
+                        : true;
+
+                    const payload: any = {
+                        name: targetName,
+                        affectRevenue: targetAffectRevenue
+                    };
+
+                    let targetSectionName: string | undefined = undefined;
+                    if (isPosSectionMapped) {
+                        if (pos.sectionName) {
+                            targetSectionName = pos.sectionName;
+                            const matchedSec = (currentStructure.sections || []).find(s => 
+                                s.name.trim().toLowerCase() === pos.sectionName.toLowerCase() &&
+                                (!matchedPos?.departmentId || s.departmentId === matchedPos.departmentId)
+                            ) || (currentStructure.sections || []).find(s => s.name.trim().toLowerCase() === pos.sectionName.toLowerCase());
+                            payload.sectionId = matchedSec ? matchedSec.id : null;
+                        } else {
+                            payload.sectionId = null;
+                        }
+                    }
+
+                    if (isPosColorMapped) {
+                        payload.color = pos.color ? pos.color.trim() : null;
+                    }
+
+                    if (isPosValidFromMapped) {
+                        payload.validFrom = pos.validFrom || null;
+                    }
+
+                    if (isPosValidToMapped) {
+                        payload.validTo = pos.validTo || null;
+                    }
+
+                    if (isPosSkillsMapped) {
+                        if (pos.skills && String(pos.skills).trim()) {
+                            const skillTokens = String(pos.skills).split(',').map((s: string) => s.trim().toLowerCase());
+                            const skillIds: number[] = [];
+                            (currentStructure.skills || []).forEach(sk => {
+                                if (skillTokens.includes(sk.name.toLowerCase()) || skillTokens.includes(String(sk.id))) {
+                                    skillIds.push(sk.id);
+                                }
+                            });
+                            payload.skillIds = skillIds;
+                        } else {
+                            payload.skillIds = [];
+                        }
+                    }
+
+                    let targetRevUnitName: string | undefined = undefined;
+                    if (isPosRevenueUnitMapped) {
+                        if (pos.revenueUnitName) {
+                            targetRevUnitName = pos.revenueUnitName;
+                            const matchedRev = (currentStructure.revenueUnits || []).find(r => 
+                                r.name.trim().toLowerCase() === pos.revenueUnitName.toLowerCase() &&
+                                (!matchedPos?.departmentId || r.departmentId === matchedPos.departmentId)
+                            ) || (currentStructure.revenueUnits || []).find(r => r.name.trim().toLowerCase() === pos.revenueUnitName.toLowerCase());
+                            payload.revenueUnitId = matchedRev ? matchedRev.id : null;
+                        } else {
+                            payload.revenueUnitId = null;
+                        }
+                    }
+
+                    const changes: string[] = [];
+                    if (isPosUpdateNameMapped && targetName !== matchedPos.name) changes.push(`Rename to '${targetName}'`);
+                    if (isPosColorMapped && payload.color !== (matchedPos.color || null)) changes.push(`Color: '${payload.color || 'None'}'`);
+                    if (isPosSectionMapped && payload.sectionId !== (matchedPos.sectionId || null)) changes.push(`Section: '${pos.sectionName || 'None'}'`);
+                    if (isPosPayrollMapped && targetAffectRevenue !== (matchedPos.affectRevenue !== undefined ? matchedPos.affectRevenue : true)) changes.push(`Payroll: ${targetAffectRevenue}`);
+                    if (isPosValidFromMapped && payload.validFrom !== (matchedPos.validFrom || null)) changes.push(`ValidFrom: '${payload.validFrom || 'None'}'`);
+                    if (isPosValidToMapped && payload.validTo !== (matchedPos.validTo || null)) changes.push(`ValidTo: '${payload.validTo || 'None'}'`);
+                    if (isPosSkillsMapped) changes.push(`Skills: '${pos.skills || 'None'}'`);
+                    if (isPosRevenueUnitMapped && payload.revenueUnitId !== (matchedPos.revenueUnitId || null)) changes.push(`RevUnit: '${pos.revenueUnitName || 'None'}'`);
+
+                    const matchedDeptObj = currentStructure.departments.find(d => d.id === matchedPos!.departmentId);
+                    const matchedGroupObj = currentStructure.employeeGroups.find(g => g.id === matchedPos!.employeeGroupId);
+
+                    if (changes.length > 0) {
+                        items.push({
+                            id: matchedPos.id,
+                            type: 'position',
+                            name: matchedPos.name,
+                            action: 'update',
+                            status: 'pending',
+                            updatePayload: {
+                                ...payload,
+                                departmentName: matchedDeptObj?.name || pos.departmentName || '',
+                                employeeGroupName: matchedGroupObj?.name || pos.employeeGroupName || '',
+                                sectionName: targetSectionName,
+                                skills: pos.skills,
+                                revenueUnitName: targetRevUnitName
+                            },
+                            resultMessage: changes.join(', ')
+                        });
+                    } else {
+                        items.push({
+                            id: matchedPos.id,
+                            type: 'position',
+                            name: matchedPos.name,
+                            action: 'skip_duplicate',
+                            status: 'skipped',
+                            resultMessage: `Already exists in Department '${matchedDeptObj?.name || pos.departmentName}'`
+                        });
+                    }
+                } else {
+                    items.push({
+                        type: 'position',
+                        name: pos.name,
+                        action: 'create',
+                        status: 'pending',
+                        updatePayload: pos
+                    });
+                }
             }
         });
 
@@ -2073,6 +2552,76 @@ export default function App() {
                     items.push({
                         id: 0,
                         type: 'section',
+                        name: entry.dept ? `${entry.dept}: ${entry.name}` : entry.name,
+                        action: 'skip_duplicate',
+                        status: 'skipped',
+                        resultMessage: 'Not found in Planday structure'
+                    });
+                }
+            });
+
+            // Positions from file
+            const pEntries: { name: string; dept?: string; group?: string }[] = [];
+            parsedRows.forEach(row => {
+                if (posNameColumn && row[posNameColumn]) {
+                    const pName = String(row[posNameColumn]).trim();
+                    const dName = posDeptColumn && row[posDeptColumn] ? String(row[posDeptColumn]).trim() : '';
+                    const gName = posGroupColumn && row[posGroupColumn] ? String(row[posGroupColumn]).trim() : '';
+                    if (pName) pEntries.push({ name: pName, dept: dName, group: gName });
+                }
+            });
+
+            const matchedPosKeys = new Set<number>();
+            pEntries.forEach(entry => {
+                const pNameLower = entry.name.toLowerCase();
+                const dNameLower = (entry.dept || '').toLowerCase();
+                const gNameLower = (entry.group || '').toLowerCase();
+
+                const matched = (currentStructure.positions || []).filter(p => {
+                    if (p.name.trim().toLowerCase() !== pNameLower) return false;
+                    if (dNameLower) {
+                        const d = currentStructure.departments.find(dept => dept.id === p.departmentId);
+                        if (!d || (d.name.trim().toLowerCase() !== dNameLower && String(d.id) !== dNameLower)) return false;
+                    }
+                    if (gNameLower) {
+                        const g = currentStructure.employeeGroups.find(grp => grp.id === p.employeeGroupId);
+                        if (!g || (g.name.trim().toLowerCase() !== gNameLower && String(g.id) !== gNameLower)) return false;
+                    }
+                    return true;
+                });
+
+                if (matched.length > 0) {
+                    matched.forEach(p => {
+                        if (!matchedPosKeys.has(p.id)) {
+                            matchedPosKeys.add(p.id);
+                            const dept = currentStructure.departments.find(d => d.id === p.departmentId);
+                            const group = currentStructure.employeeGroups.find(g => g.id === p.employeeGroupId);
+                            items.push({
+                                id: p.id,
+                                type: 'position',
+                                name: p.name,
+                                action: appMode === 'update' ? 'update' : 'delete',
+                                status: 'pending',
+                                updatePayload: {
+                                    departmentId: p.departmentId,
+                                    departmentName: dept?.name || `Dept #${p.departmentId}`,
+                                    employeeGroupId: p.employeeGroupId,
+                                    employeeGroupName: group?.name || `Group #${p.employeeGroupId}`,
+                                    name: p.name,
+                                    color: p.color || '',
+                                    validFrom: p.validFrom || '',
+                                    validTo: p.validTo || '',
+                                    revenueUnitId: p.revenueUnitId,
+                                    affectRevenue: p.affectRevenue !== undefined ? p.affectRevenue : true
+                                },
+                                resultMessage: appMode === 'update' ? 'Update scheduled' : `Scheduled for deletion (${dept?.name || p.departmentId})`
+                            });
+                        }
+                    });
+                } else {
+                    items.push({
+                        id: 0,
+                        type: 'position',
                         name: entry.dept ? `${entry.dept}: ${entry.name}` : entry.name,
                         action: 'skip_duplicate',
                         status: 'skipped',
@@ -2470,27 +3019,28 @@ export default function App() {
                         const targetName = (item.updatePayload?.name !== undefined && item.updatePayload?.name !== null && String(item.updatePayload.name).trim() !== '') 
                             ? String(item.updatePayload.name).trim() 
                             : originalName;
-                        const targetColor = item.updatePayload?.color !== undefined
-                            ? (item.updatePayload.color ? String(item.updatePayload.color).trim() : null)
-                            : originalColor;
+                        
+                        const sectionPayload: { name: string; color?: string | null } = {
+                            name: targetName
+                        };
+                        if (item.updatePayload?.color !== undefined) {
+                            sectionPayload.color = item.updatePayload.color ? String(item.updatePayload.color).trim() : null;
+                        }
 
                         const nameChanged = targetName !== originalName;
-                        const colorChanged = targetColor !== originalColor;
+                        const colorChanged = item.updatePayload?.color !== undefined && sectionPayload.color !== originalColor;
 
-                        if (nameChanged || colorChanged || appMode === 'update' || appMode === 'import') {
-                            await updateSection(deptId, item.id, targetName, targetColor);
-                            item.status = 'success';
-                            const changes: string[] = [];
-                            if (nameChanged) changes.push(`Name: '${originalName}' -> '${targetName}'`);
-                            if (colorChanged) changes.push(`Color: '${originalColor || 'None'}' -> '${targetColor || 'None'}'`);
-                            item.resultMessage = changes.length > 0 ? `Updated successfully (${changes.join(', ')})` : 'Updated successfully';
-                            if (existingSec) {
-                                existingSec.name = targetName;
-                                existingSec.color = targetColor;
+                        await updateSection(deptId, item.id, sectionPayload);
+                        item.status = 'success';
+                        const changes: string[] = [];
+                        if (nameChanged) changes.push(`Name: '${originalName}' -> '${targetName}'`);
+                        if (colorChanged) changes.push(`Color: '${originalColor || 'None'}' -> '${sectionPayload.color || 'None'}'`);
+                        item.resultMessage = changes.length > 0 ? `Updated successfully (${changes.join(', ')})` : 'Updated successfully';
+                        if (existingSec) {
+                            existingSec.name = targetName;
+                            if (sectionPayload.color !== undefined) {
+                                existingSec.color = sectionPayload.color;
                             }
-                        } else {
-                            item.status = 'skipped';
-                            item.resultMessage = 'No changes detected (Name and Color already match Planday)';
                         }
                     } else if (item.type === 'department') {
                         const existingDept = currentStructure.departments.find(d => d.id === item.id || d.name.trim().toLowerCase() === item.name.trim().toLowerCase());
@@ -2528,25 +3078,50 @@ export default function App() {
                         const targetName = (item.updatePayload?.name !== undefined && String(item.updatePayload.name).trim() !== '') 
                             ? String(item.updatePayload.name).trim() 
                             : originalName;
-                        const targetColor = item.updatePayload?.color !== undefined ? item.updatePayload.color : (existingPos?.color || null);
                         
+                        // PUT /scheduling/v1.0/positions/{positionId}
+                        // Schema: sectionId, name (required), color, validFrom, validTo, skillIds, affectRevenue (required), revenueUnitId
+                        // Only include mapped payload properties!
+                        // affectRevenue is always required. Set to true if not specified.
                         const updateBody: any = {
                             name: targetName,
-                            departmentId: existingPos?.departmentId || item.updatePayload?.departmentId,
-                            employeeGroupId: existingPos?.employeeGroupId || item.updatePayload?.employeeGroupId,
-                            color: targetColor || null,
-                            validFrom: item.updatePayload?.validFrom || existingPos?.validFrom || null,
-                            validTo: item.updatePayload?.validTo || existingPos?.validTo || null,
-                            revenueUnitId: item.updatePayload?.revenueUnitId !== undefined ? item.updatePayload.revenueUnitId : (existingPos?.revenueUnitId || null),
-                            affectRevenue: item.updatePayload?.affectRevenue !== undefined ? item.updatePayload.affectRevenue : (existingPos?.affectRevenue !== undefined ? existingPos.affectRevenue : true)
+                            affectRevenue: item.updatePayload?.affectRevenue !== undefined 
+                                ? Boolean(item.updatePayload.affectRevenue) 
+                                : true
                         };
+
+                        if (item.updatePayload?.sectionId !== undefined) {
+                            updateBody.sectionId = item.updatePayload.sectionId;
+                        }
+                        if (item.updatePayload?.color !== undefined) {
+                            updateBody.color = item.updatePayload.color ? String(item.updatePayload.color).trim() : null;
+                        }
+                        if (item.updatePayload?.validFrom !== undefined) {
+                            updateBody.validFrom = item.updatePayload.validFrom || null;
+                        }
+                        if (item.updatePayload?.validTo !== undefined) {
+                            updateBody.validTo = item.updatePayload.validTo || null;
+                        }
+                        if (item.updatePayload?.skillIds !== undefined) {
+                            updateBody.skillIds = Array.isArray(item.updatePayload.skillIds) ? item.updatePayload.skillIds : [];
+                        }
+                        if (item.updatePayload?.revenueUnitId !== undefined) {
+                            updateBody.revenueUnitId = item.updatePayload.revenueUnitId;
+                        }
+
                         await updatePosition(item.id, updateBody);
                         item.status = 'success';
                         const nameChanged = targetName !== originalName;
                         item.resultMessage = nameChanged ? `Updated successfully (Name: '${originalName}' -> '${targetName}')` : 'Updated successfully';
                         if (existingPos) {
                             existingPos.name = targetName;
-                            existingPos.color = targetColor;
+                            if (updateBody.color !== undefined) existingPos.color = updateBody.color;
+                            if (updateBody.sectionId !== undefined) existingPos.sectionId = updateBody.sectionId;
+                            if (updateBody.affectRevenue !== undefined) existingPos.affectRevenue = updateBody.affectRevenue;
+                            if (updateBody.validFrom !== undefined) existingPos.validFrom = updateBody.validFrom;
+                            if (updateBody.validTo !== undefined) existingPos.validTo = updateBody.validTo;
+                            if (updateBody.skillIds !== undefined) existingPos.skillIds = updateBody.skillIds;
+                            if (updateBody.revenueUnitId !== undefined) existingPos.revenueUnitId = updateBody.revenueUnitId;
                         }
                     } else if (item.type === 'skill') {
                         const existingSkill = (currentStructure.skills || []).find(s => s.id === item.id);
@@ -2658,17 +3233,41 @@ export default function App() {
 
             if (item.type === 'section') {
                 row["Department"] = item.updatePayload?.departmentName || "";
-                row["Color"] = item.updatePayload?.color || "";
+                if (item.updatePayload?.color !== undefined) {
+                    row["Color"] = item.updatePayload?.color || "";
+                }
                 if (item.updatePayload?.name && item.updatePayload.name !== item.name) {
                     row["Updated Name"] = item.updatePayload.name;
                 }
             }
 
             if (item.type === 'position') {
+                if (item.updatePayload?.name && item.updatePayload.name !== item.name) {
+                    row["Updated Name"] = item.updatePayload.name;
+                }
                 row["Department Name"] = item.updatePayload?.departmentName || "";
                 row["Employee Group Name"] = item.updatePayload?.employeeGroupName || "";
-                row["Skills"] = item.updatePayload?.skills || "";
-                row["Revenue Unit"] = item.updatePayload?.revenueUnitName || "";
+                if (item.updatePayload?.sectionName) {
+                    row["Section Name"] = item.updatePayload.sectionName;
+                }
+                if (item.updatePayload?.color !== undefined) {
+                    row["Color"] = item.updatePayload.color || "";
+                }
+                if (item.updatePayload?.affectRevenue !== undefined) {
+                    row["Include in Payroll %"] = String(item.updatePayload.affectRevenue);
+                }
+                if (item.updatePayload?.validFrom !== undefined) {
+                    row["Valid From"] = item.updatePayload.validFrom || "";
+                }
+                if (item.updatePayload?.validTo !== undefined) {
+                    row["Valid To"] = item.updatePayload.validTo || "";
+                }
+                if (item.updatePayload?.skills) {
+                    row["Skills"] = item.updatePayload.skills;
+                }
+                if (item.updatePayload?.revenueUnitName) {
+                    row["Revenue Unit"] = item.updatePayload.revenueUnitName;
+                }
             }
 
             if (item.type === 'skill') {
@@ -4285,73 +4884,117 @@ export default function App() {
                             {/* Positions Card */}
                             {appMode !== 'delete' && (
                             <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
-                                <h3 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-200 pb-2">Positions</h3>
+                                <div className="flex justify-between items-center mb-4 border-b border-gray-200 pb-2">
+                                    <h3 className="text-lg font-bold text-gray-900">Positions</h3>
+                                    {appMode === 'update' && (
+                                        <span className="text-xs bg-amber-100 text-amber-800 font-semibold px-2.5 py-0.5 rounded-full">
+                                            Update Mode
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Position Name:</label>
+                                        <label className="block text-sm font-bold text-gray-800 mb-1">
+                                            {appMode === 'update' ? 'Position (Match by):' : 'Position Name:'}
+                                        </label>
+                                        <span className="block text-xs text-gray-500 mb-2">
+                                            {appMode === 'update' ? 'Existing position name in Planday' : 'Position name'}
+                                        </span>
                                         <select value={posNameColumn} onChange={(e) => setPosNameColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
                                             <option value="">-- None --</option>
                                             {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                         </select>
                                     </div>
+                                    {appMode === 'update' && (
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-800 mb-1 flex items-center gap-1.5">
+                                                <span>UPDATE - Position Name:</span>
+                                                <span className="text-xs font-normal text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">New Name</span>
+                                            </label>
+                                            <span className="block text-xs text-gray-500 mb-2">
+                                                New name for position (Optional)
+                                            </span>
+                                            <select value={posUpdateNameColumn} onChange={(e) => setPosUpdateNameColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 font-medium">
+                                                <option value="">-- None --</option>
+                                                {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Position Dept:</label>
+                                        <label className="block text-sm font-bold text-gray-800 mb-1">
+                                            {appMode === 'update' ? 'Position Dept (Opt):' : 'Position Dept:'}
+                                        </label>
+                                        <span className="block text-xs text-gray-500 mb-2">
+                                            {appMode === 'update' ? 'Department filter / scope (Opt)' : 'Department position belongs to'}
+                                        </span>
                                         <select value={posDeptColumn} onChange={(e) => setPosDeptColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
                                             <option value="">-- None --</option>
                                             {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Position Group:</label>
+                                        <label className="block text-sm font-bold text-gray-800 mb-1">
+                                            {appMode === 'update' ? 'Position Group (Opt):' : 'Position Group:'}
+                                        </label>
+                                        <span className="block text-xs text-gray-500 mb-2">
+                                            {appMode === 'update' ? 'Group filter / scope (Opt)' : 'Employee group position belongs to'}
+                                        </span>
                                         <select value={posGroupColumn} onChange={(e) => setPosGroupColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
                                             <option value="">-- None --</option>
                                             {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Pos. Section (Opt):</label>
+                                        <label className="block text-sm font-bold text-gray-800 mb-1">Pos. Section (Opt):</label>
+                                        <span className="block text-xs text-gray-500 mb-2">Section assignment</span>
                                         <select value={posSectionColumn} onChange={(e) => setPosSectionColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
                                             <option value="">-- None --</option>
                                             {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Pos. Color (Opt):</label>
+                                        <label className="block text-sm font-bold text-gray-800 mb-1">Pos. Color (Opt):</label>
+                                        <span className="block text-xs text-gray-500 mb-2">Hex color code (e.g. #21E56E)</span>
                                         <select value={posColorColumn} onChange={(e) => setPosColorColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
                                             <option value="">-- None --</option>
                                             {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Pos. Valid From (Opt):</label>
+                                        <label className="block text-sm font-bold text-gray-800 mb-1">Pos. Valid From (Opt):</label>
+                                        <span className="block text-xs text-gray-500 mb-2">Valid from date</span>
                                         <select value={posValidFromColumn} onChange={(e) => setPosValidFromColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
                                             <option value="">-- None --</option>
                                             {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Pos. Valid To (Opt):</label>
+                                        <label className="block text-sm font-bold text-gray-800 mb-1">Pos. Valid To (Opt):</label>
+                                        <span className="block text-xs text-gray-500 mb-2">Valid to date</span>
                                         <select value={posValidToColumn} onChange={(e) => setPosValidToColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
                                             <option value="">-- None --</option>
                                             {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Pos. Skills (Opt):</label>
+                                        <label className="block text-sm font-bold text-gray-800 mb-1">Pos. Skills (Opt):</label>
+                                        <span className="block text-xs text-gray-500 mb-2">Comma-separated skills</span>
                                         <select value={posSkillsColumn} onChange={(e) => setPosSkillsColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
                                             <option value="">-- None --</option>
                                             {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Pos. In Payroll (Opt):</label>
+                                        <label className="block text-sm font-bold text-gray-800 mb-1">Pos. In Payroll / Affect Rev (Opt):</label>
+                                        <span className="block text-xs text-gray-500 mb-2">true/false (defaults to true)</span>
                                         <select value={posPayrollColumn} onChange={(e) => setPosPayrollColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
                                             <option value="">-- None --</option>
                                             {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-800 mb-2">Pos. Rev Unit (Opt):</label>
+                                        <label className="block text-sm font-bold text-gray-800 mb-1">Pos. Rev Unit (Opt):</label>
+                                        <span className="block text-xs text-gray-500 mb-2">Revenue unit name</span>
                                         <select value={posRevenueUnitColumn} onChange={(e) => setPosRevenueUnitColumn(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 font-medium">
                                             <option value="">-- None --</option>
                                             {parsedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
@@ -4912,7 +5555,7 @@ export default function App() {
                                                         )}
                                                         {item.type === 'section' && (
                                                             <div className="space-y-1">
-                                                                {item.departmentName && <div><span className="font-semibold text-gray-800">Dept:</span> {item.departmentName}</div>}
+                                                                {item.updatePayload?.departmentName && <div><span className="font-semibold text-gray-800">Dept:</span> {item.updatePayload.departmentName}</div>}
                                                                 {item.action === 'update' && item.updatePayload?.name && item.updatePayload.name !== item.name && (
                                                                     <div><span className="font-semibold text-amber-800">New Name:</span> <span className="font-bold text-gray-900">{item.updatePayload.name}</span></div>
                                                                 )}
@@ -4939,15 +5582,29 @@ export default function App() {
                                                         )}
                                                         {item.type === 'position' && item.updatePayload && (
                                                             <div className="space-y-1">
-                                                                <div><span className="font-semibold text-gray-800">Department:</span> {item.updatePayload.departmentName}</div>
-                                                                <div><span className="font-semibold text-gray-800">Employee Group:</span> {item.updatePayload.employeeGroupName}</div>
+                                                                {item.updatePayload.departmentName && <div><span className="font-semibold text-gray-800">Department:</span> {item.updatePayload.departmentName}</div>}
+                                                                {item.updatePayload.employeeGroupName && <div><span className="font-semibold text-gray-800">Employee Group:</span> {item.updatePayload.employeeGroupName}</div>}
+                                                                {item.action === 'update' && item.updatePayload.name && item.updatePayload.name !== item.name && (
+                                                                    <div><span className="font-semibold text-amber-800">New Name:</span> <span className="font-bold text-gray-900">{item.updatePayload.name}</span></div>
+                                                                )}
+                                                                {item.updatePayload.color && (
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <span className="font-semibold text-gray-800">Color:</span>
+                                                                        <span className="w-3 h-3 rounded-full inline-block border border-gray-300" style={{ backgroundColor: item.updatePayload.color }}></span>
+                                                                        <span className="font-mono text-xs">{item.updatePayload.color}</span>
+                                                                    </div>
+                                                                )}
+                                                                {item.updatePayload.sectionName && <div><span className="font-semibold text-gray-800">Section:</span> {item.updatePayload.sectionName}</div>}
+                                                                {item.updatePayload.affectRevenue !== undefined && <div><span className="font-semibold text-gray-800">Payroll %:</span> {String(item.updatePayload.affectRevenue)}</div>}
+                                                                {(item.updatePayload.validFrom || item.updatePayload.validTo) && <div><span className="font-semibold text-gray-800">Validity:</span> {item.updatePayload.validFrom || 'Any'} &rarr; {item.updatePayload.validTo || 'Any'}</div>}
                                                                 {item.updatePayload.skills && <div><span className="font-semibold text-gray-800">Skills:</span> {item.updatePayload.skills}</div>}
                                                                 {item.updatePayload.revenueUnitName && <div><span className="font-semibold text-gray-800">Rev Unit:</span> {item.updatePayload.revenueUnitName}</div>}
                                                             </div>
                                                         )}
                                                         {(item.type === 'department' && !(item.updatePayload?.name !== item.name || item.updatePayload?.number || item.number)) || 
-                                                         (item.type === 'section' && !(item.departmentName || item.updatePayload?.name || item.updatePayload?.color)) ||
+                                                         (item.type === 'section' && !(item.updatePayload?.departmentName || item.updatePayload?.name || item.updatePayload?.color)) ||
                                                          (item.type === 'employee_group' && !item.updatePayload) ||
+                                                         (item.type === 'position' && !item.updatePayload) ||
                                                          (item.type === 'skill' && !item.updatePayload?.description) ? (
                                                             <span className="italic text-gray-400">None</span>
                                                         ) : null}
